@@ -1,9 +1,13 @@
 # Changelog
 
-## Unreleased
+## [Unreleased]
+
+## [0.2.0] - 2026-10-08
 
 ### Added
 
+- Added mouse-wheel zoom to quota and Token history charts.
+- Added theme synchronization to the statistics window and coordinated circular theme transitions.
 - Added restrained icon feedback for fast-mode activation, usage updates, reset-card hover, and reset outcomes.
 - Added static refresh and exit icons to the native system-tray menu.
 - Redesigned the usage details panel with remaining-usage rings, localized reset times, and a compact dark layout.
