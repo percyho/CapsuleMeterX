@@ -1,15 +1,26 @@
-import { useEffect, useRef, useState, type MouseEvent } from "react";
+import { useEffect, useLayoutEffect, useRef, useState, type MouseEvent } from "react";
 import { invoke, isTauri } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { useUsage } from "../hooks/useUsage";
 import { usageColor, usagePaceColor } from "../utils/usage";
 import { FastModeIndicator } from "./FastModeIndicator";
 
 const TOOLTIP_HANDOFF_DELAY_MS = 800;
+type Theme = "dark" | "light";
+
+function readThemePreference(): Theme {
+  try {
+    return window.localStorage.getItem("capsulemeter-theme") === "light" ? "light" : "dark";
+  } catch {
+    return "dark";
+  }
+}
 
 export function FloatingUsageCapsule() {
   const usage = useUsage();
   const [now, setNow] = useState(Date.now());
+  const [theme, setTheme] = useState<Theme>(readThemePreference);
   const [capsuleWidth, setCapsuleWidth] = useState(120);
   const capsuleRef = useRef<HTMLElement | null>(null);
   const requestedWidth = useRef<number | null>(null);
@@ -18,6 +29,42 @@ export function FloatingUsageCapsule() {
   useEffect(() => {
     const timer = window.setInterval(() => setNow(Date.now()), 30_000);
     return () => window.clearInterval(timer);
+  }, []);
+
+  useLayoutEffect(() => {
+    document.documentElement.dataset.theme = theme;
+    try {
+      window.localStorage.setItem("capsulemeter-theme", theme);
+    } catch {
+      // Keep the selected theme for this window even if storage is unavailable.
+    }
+  }, [theme]);
+
+  useEffect(() => {
+    let disposed = false;
+    let unlisten: (() => void) | undefined;
+    const applyTheme = (value: string | null) => {
+      if (value === "light" || value === "dark") setTheme(value);
+    };
+    const onStorage = (event: StorageEvent) => {
+      if (event.key === "capsulemeter-theme") applyTheme(event.newValue);
+    };
+
+    window.addEventListener("storage", onStorage);
+    if (isTauri()) {
+      void listen<string>("capsulemeter-theme-changed", (event) => {
+        applyTheme(event.payload);
+      }).then((stopListening) => {
+        if (disposed) stopListening();
+        else unlisten = stopListening;
+      });
+    }
+
+    return () => {
+      disposed = true;
+      window.removeEventListener("storage", onStorage);
+      unlisten?.();
+    };
   }, []);
 
   useEffect(

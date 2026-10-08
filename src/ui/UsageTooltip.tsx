@@ -1,6 +1,7 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { flushSync } from "react-dom";
 import { invoke, isTauri } from "@tauri-apps/api/core";
-import { listen } from "@tauri-apps/api/event";
+import { emit, listen } from "@tauri-apps/api/event";
 import { useUsage } from "../hooks/useUsage";
 import type { ResetCardExpiry, UsageWindow } from "../types/usage";
 import {
@@ -13,12 +14,152 @@ import {
 } from "../utils/usage";
 
 type ResetDialogState = "confirm" | "loading" | "success" | "error";
+type Language = "zh" | "en";
+type Theme = "dark" | "light";
+
+const TEXT = {
+  zh: {
+    usageDetails: "用量详情",
+    usagePreview: "CapsuleMeterX 用量预览",
+    switchToEnglish: "切换到 English",
+    switchToChinese: "切换到简体中文",
+    switchToLight: "切换到明亮主题",
+    switchToDark: "切换到暗黑主题",
+    offline: "无法连接 Codex App Server",
+    fiveHour: "5 小时剩余",
+    weekly: "本周剩余",
+    nextReset: "下次重置",
+    resetCards: "剩余重置卡",
+    cardCountUnit: "张",
+    cardExpiry: "离有效时间还剩",
+    reset: "重置",
+    noConnection: "连接 Codex 后才能使用重置卡",
+    expiredCard: "这张重置卡已过期",
+    unavailableCard: "缺少可验证的重置卡标识，暂不能安全使用",
+    noCards: "暂无可用重置卡",
+    loadingCards: "正在读取重置卡信息…",
+    unavailableCardDetails: "暂时无法读取卡片详情，无法安全地指定卡片。",
+    otherCardsUnavailable: "其余卡片详情暂不可用",
+    previewFiveHour: "5h",
+    previewWeekly: "本周",
+    previewDetails: "点击查看详情",
+    confirmTitle: "确认使用重置卡？",
+    loadingTitle: "正在使用重置卡…",
+    successTitle: "重置成功",
+    errorTitle: "重置失败",
+    confirmMessage: "确定使用这张重置卡吗？此操作可能无法撤销。",
+    loadingMessage: "请稍候，正在等待 Codex 确认重置结果。",
+    successMessage: "Codex 已确认重置完成，正在刷新用量。",
+    cardRemaining: "重置卡有效期还剩",
+    close: "关闭",
+    done: "确定",
+    cancel: "取消",
+    retry: "重试",
+    confirmReset: "确认重置",
+    usingCard: "正在使用重置卡…",
+    nothingToReset: "当前用量无需重置，这张卡仍未使用。",
+    noCredit: "账户中没有可用的重置卡。",
+    unconfirmedOutcome: "Codex 返回了未确认的结果：",
+    invalidCard: "重置卡信息无效，请刷新用量后重试。",
+    cardInProgress: "这张重置卡正在处理中，请稍候。",
+    serverNotReady: "Codex App Server 尚未就绪，请稍后重试。",
+    resetTimedOut: "等待 Codex 确认重置结果超时。请稍后刷新用量，再决定是否重试。",
+    serverDisconnected: "Codex App Server 连接已断开，重置结果未能确认。请刷新用量后再试。",
+    permanent: "永久有效",
+    expiryUnknown: "有效期未知",
+    unknown: "未知",
+    expired: "已过期",
+    underOneMinute: "少于 1 分钟",
+  },
+  en: {
+    usageDetails: "Usage details",
+    usagePreview: "CapsuleMeterX usage preview",
+    switchToEnglish: "Switch to English",
+    switchToChinese: "Switch to Chinese",
+    switchToLight: "Switch to light theme",
+    switchToDark: "Switch to dark theme",
+    offline: "Unable to connect to Codex App Server",
+    fiveHour: "5-hour remaining",
+    weekly: "Weekly remaining",
+    nextReset: "Next reset",
+    resetCards: "Available reset cards",
+    cardCountUnit: "cards",
+    cardExpiry: "Expires in",
+    reset: "Reset",
+    noConnection: "Connect to Codex to use reset cards",
+    expiredCard: "This reset card has expired",
+    unavailableCard: "A verifiable reset-card ID is unavailable",
+    noCards: "No reset cards available",
+    loadingCards: "Loading reset-card information…",
+    unavailableCardDetails: "Card details are unavailable, so no card can be selected safely.",
+    otherCardsUnavailable: "Details for some cards are unavailable",
+    previewFiveHour: "5h",
+    previewWeekly: "Week",
+    previewDetails: "View details",
+    confirmTitle: "Use this reset card?",
+    loadingTitle: "Using reset card…",
+    successTitle: "Reset successful",
+    errorTitle: "Reset failed",
+    confirmMessage: "Are you sure you want to use this reset card? This action may not be reversible.",
+    loadingMessage: "Please wait while Codex confirms the reset.",
+    successMessage: "Codex confirmed the reset. Usage is being refreshed.",
+    cardRemaining: "Card expires in",
+    close: "Close",
+    done: "Done",
+    cancel: "Cancel",
+    retry: "Retry",
+    confirmReset: "Confirm reset",
+    usingCard: "Using reset card…",
+    nothingToReset: "There is no usage to reset. This card was not used.",
+    noCredit: "There are no available reset cards on this account.",
+    unconfirmedOutcome: "Codex returned an unconfirmed result: ",
+    invalidCard: "Reset-card details are invalid. Refresh usage and try again.",
+    cardInProgress: "This reset card is already being processed. Please wait.",
+    serverNotReady: "Codex App Server is not ready. Please try again later.",
+    resetTimedOut: "Timed out waiting for Codex to confirm the reset. Refresh usage before retrying.",
+    serverDisconnected: "Codex App Server disconnected before confirming the reset. Refresh usage and try again.",
+    permanent: "Never expires",
+    expiryUnknown: "Expiry unknown",
+    unknown: "Unknown",
+    expired: "Expired",
+    underOneMinute: "Less than 1 minute",
+  },
+} as const;
+
+function storedPreference(key: string): string | null {
+  try {
+    return window.localStorage.getItem(key);
+  } catch {
+    return null;
+  }
+}
+
+function localizeResetError(error: string, language: Language): string {
+  if (language === "zh") return error;
+  const knownErrors: Record<string, string> = {
+    [TEXT.zh.invalidCard]: TEXT.en.invalidCard,
+    [TEXT.zh.cardInProgress]: TEXT.en.cardInProgress,
+    [TEXT.zh.serverNotReady]: TEXT.en.serverNotReady,
+    [TEXT.zh.resetTimedOut]: TEXT.en.resetTimedOut,
+    [TEXT.zh.serverDisconnected]: TEXT.en.serverDisconnected,
+  };
+  return knownErrors[error] ?? error;
+}
 
 function UsageRing({ window, label }: { window: UsageWindow | null; label: string }) {
   const remaining = window?.remainingPercent ?? null;
+  const previousRemaining = useRef<number | null>(null);
+  const [hasReceivedUpdate, setHasReceivedUpdate] = useState(false);
   const radius = 23;
   const circumference = 2 * Math.PI * radius;
   const progress = remaining === null ? 0 : Math.max(0, Math.min(100, remaining));
+
+  useEffect(() => {
+    if (remaining === null) return;
+
+    if (previousRemaining.current === null) setHasReceivedUpdate(true);
+    previousRemaining.current = remaining;
+  }, [remaining]);
 
   return (
     <svg
@@ -29,7 +170,7 @@ function UsageRing({ window, label }: { window: UsageWindow | null; label: strin
     >
       <circle className="usage-ring__track" cx="27" cy="27" r={radius} />
       <circle
-        className="usage-ring__progress"
+        className={`usage-ring__progress${hasReceivedUpdate ? " usage-ring__progress--animated" : ""}`}
         cx="27"
         cy="27"
         r={radius}
@@ -44,44 +185,123 @@ function UsageRing({ window, label }: { window: UsageWindow | null; label: strin
   );
 }
 
-function TicketIcon() {
+function ResetCardIcon() {
   return (
-    <svg className="reset-card__ticket" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+    <svg className="reset-card__reset-icon" viewBox="0 0 24 24" fill="none" aria-hidden="true">
       <path
-        d="M4 7.25A2.25 2.25 0 0 0 6.25 5h11.5A2.25 2.25 0 0 0 20 7.25v1.1a2.6 2.6 0 0 0 0 5.3v1.1A2.25 2.25 0 0 0 17.75 17h-11.5A2.25 2.25 0 0 0 4 14.75v-1.1a2.6 2.6 0 0 0 0-5.3v-1.1Z"
+        d="M4.5 4h15A2 2 0 0 1 21.5 6v3.2a2.8 2.8 0 0 0 0 5.6V18a2 2 0 0 1-2 2h-15a2 2 0 0 1-2-2v-3.2a2.8 2.8 0 0 0 0-5.6V6a2 2 0 0 1 2-2Z"
         stroke="currentColor"
-        strokeWidth="1.7"
+        strokeWidth="1.8"
+        strokeLinecap="round"
         strokeLinejoin="round"
       />
-      <path d="M9 8.5v1m0 2v1m0 2h6" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" />
+      <path d="M9 12h6" stroke="var(--usage-accent)" strokeWidth="2.2" strokeLinecap="round" />
     </svg>
   );
 }
 
-function expiryLabel(card: ResetCardExpiry, now: number) {
-  if (card.expiresAt === null) {
-    return card.expiryDetailsAvailable ? "永久有效" : "有效期未知";
-  }
-  return resetCardExpiryCountdown(card.expiresAt, now);
+function LanguagesIcon() {
+  return (
+    <svg className="usage-tooltip__toolbar-icon" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <path d="M3.5 5h9M8 3v2m4.5 0c0 4.2-3 7.6-7.5 9.4M5.5 8c1.3 2.8 3.8 5.1 6.4 6.4M13.5 20l4-10 4 10m-6.5-3h5" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
 }
 
-function expiryDaysLabel(card: ResetCardExpiry, now: number) {
+function SunIcon() {
+  return (
+    <svg className="usage-tooltip__toolbar-icon" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <circle cx="12" cy="12" r="4" stroke="currentColor" strokeWidth="1.7" />
+      <path d="M12 2.5v2m0 15v2m9.5-9.5h-2m-15 0h-2m16.22-6.72-1.42 1.42M6.7 17.3l-1.42 1.42m13.44 0-1.42-1.42M6.7 6.7 5.28 5.28" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" />
+    </svg>
+  );
+}
+
+function MoonIcon() {
+  return (
+    <svg className="usage-tooltip__toolbar-icon" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <path d="M20.4 15.2A8.6 8.6 0 0 1 8.8 3.6 8.8 8.8 0 1 0 20.4 15.2Z" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
+function LoaderCircleIcon({ button = false }: { button?: boolean }) {
+  return (
+    <svg
+      className={`reset-dialog__loader${button ? " reset-dialog__loader--button" : ""}`}
+      viewBox="0 0 24 24"
+      fill="none"
+      aria-hidden="true"
+    >
+      <path
+        d="M12 2a10 10 0 1 0 10 10"
+        stroke="currentColor"
+        strokeWidth="2"
+        strokeLinecap="round"
+      />
+    </svg>
+  );
+}
+
+function CheckCircle2Icon() {
+  return (
+    <svg className="reset-dialog__status-icon" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <circle cx="12" cy="12" r="9.5" stroke="currentColor" strokeWidth="1.8" />
+      <path d="m8 12.2 2.6 2.6 5.6-5.6" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
+function AlertCircleIcon() {
+  return (
+    <svg className="reset-dialog__status-icon" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <circle cx="12" cy="12" r="9.5" stroke="currentColor" strokeWidth="1.8" />
+      <path d="M12 8v4.5m0 3.5h.01" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+    </svg>
+  );
+}
+
+function CloseIcon() {
+  return (
+    <svg className="reset-dialog__close-icon" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <path d="m6 6 12 12M18 6 6 18" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+    </svg>
+  );
+}
+
+function expiryLabel(card: ResetCardExpiry, now: number, language: Language) {
+  const text = TEXT[language];
   if (card.expiresAt === null) {
-    return card.expiryDetailsAvailable ? "永久有效" : "未知";
+    return card.expiryDetailsAvailable ? text.permanent : text.expiryUnknown;
+  }
+  return resetCardExpiryCountdown(card.expiresAt, now, language);
+}
+
+function expiryDaysLabel(card: ResetCardExpiry, now: number, language: Language) {
+  const text = TEXT[language];
+  if (card.expiresAt === null) {
+    return card.expiryDetailsAvailable ? text.permanent : text.unknown;
   }
   const seconds = Math.floor(card.expiresAt - now / 1000);
-  if (seconds <= 0) return "已过期";
+  if (seconds <= 0) return text.expired;
   const days = Math.floor(seconds / 86_400);
-  if (days > 0) return `${days} 天`;
+  if (days > 0) return language === "zh" ? `${days} 天` : `${days} days`;
   const hours = Math.floor(seconds / 3_600);
-  if (hours > 0) return `${hours} 小时`;
+  if (hours > 0) return language === "zh" ? `${hours} 小时` : `${hours} hours`;
   const minutes = Math.floor(seconds / 60);
-  return minutes > 0 ? `${minutes} 分钟` : "少于 1 分钟";
+  if (minutes > 0) return language === "zh" ? `${minutes} 分钟` : `${minutes} minutes`;
+  return text.underOneMinute;
 }
 
 export function UsageTooltipWindow() {
   const usage = useUsage();
   const [now, setNow] = useState(Date.now());
+  const [language, setLanguage] = useState<Language>(() =>
+    storedPreference("capsulemeter-language") === "en" ? "en" : "zh",
+  );
+  const [theme, setTheme] = useState<Theme>(() =>
+    storedPreference("capsulemeter-theme") === "light" ? "light" : "dark",
+  );
   const [viewMode, setViewMode] = useState<"details" | "tray-preview">("details");
   const [selectedCard, setSelectedCard] = useState<ResetCardExpiry | null>(null);
   const [dialogState, setDialogState] = useState<ResetDialogState | null>(null);
@@ -89,6 +309,21 @@ export function UsageTooltipWindow() {
   const [consumedCardIds, setConsumedCardIds] = useState<string[]>([]);
   const idempotencyKeys = useRef(new Map<string, string>());
   const tooltipRef = useRef<HTMLElement>(null);
+  const themeTransitioning = useRef(false);
+  const themeLeaveCheckTimer = useRef<number | undefined>(undefined);
+  const themeGuardReleaseTimer = useRef<number | undefined>(undefined);
+  const text = TEXT[language];
+
+  useLayoutEffect(() => {
+    document.documentElement.dataset.theme = theme;
+    document.documentElement.lang = language === "zh" ? "zh-CN" : "en";
+    try {
+      window.localStorage.setItem("capsulemeter-language", language);
+      window.localStorage.setItem("capsulemeter-theme", theme);
+    } catch {
+      // Preferences still apply for the current window when storage is unavailable.
+    }
+  }, [language, theme]);
 
   useEffect(() => {
     let disposed = false;
@@ -147,6 +382,11 @@ export function UsageTooltipWindow() {
     return () => window.clearInterval(timer);
   }, []);
 
+  useEffect(() => () => {
+    window.clearTimeout(themeLeaveCheckTimer.current);
+    window.clearTimeout(themeGuardReleaseTimer.current);
+  }, []);
+
   useEffect(() => {
     const listedIds = new Set(usage.resetCards.flatMap((card) => card.id ? [card.id] : []));
     setConsumedCardIds((current) => current.filter((id) => listedIds.has(id)));
@@ -161,6 +401,45 @@ export function UsageTooltipWindow() {
   const resetCardCount = usage.resetCardsAvailable === null
     ? null
     : Math.max(0, usage.resetCardsAvailable - consumedStillListed.length);
+
+  const toggleTheme = () => {
+    const nextTheme: Theme = theme === "dark" ? "light" : "dark";
+    const applyTheme = () => flushSync(() => setTheme(nextTheme));
+    const protectTooltip = () => {
+      themeTransitioning.current = true;
+      window.clearTimeout(themeGuardReleaseTimer.current);
+      themeGuardReleaseTimer.current = window.setTimeout(() => {
+        themeTransitioning.current = false;
+      }, 80);
+    };
+
+    if (isTauri()) {
+      void invoke("keep_usage_tooltip");
+      void emit("capsulemeter-theme-changed", nextTheme).catch((error) => {
+        console.error("Could not sync CapsuleMeterX theme", error);
+      });
+    }
+    themeTransitioning.current = true;
+    window.clearTimeout(themeLeaveCheckTimer.current);
+    window.clearTimeout(themeGuardReleaseTimer.current);
+
+    if (
+      !window.matchMedia("(prefers-reduced-motion: reduce)").matches &&
+      typeof document.startViewTransition === "function"
+    ) {
+      try {
+        const transition = document.startViewTransition(applyTheme);
+        void transition.finished.then(protectTooltip, protectTooltip);
+        return;
+      } catch {
+        // Fall back to an immediate theme change if a transition is already running.
+      }
+    }
+    applyTheme();
+    themeGuardReleaseTimer.current = window.setTimeout(() => {
+      themeTransitioning.current = false;
+    }, 180);
+  };
 
   const openResetDialog = (card: ResetCardExpiry) => {
     setSelectedCard(card);
@@ -201,10 +480,10 @@ export function UsageTooltipWindow() {
 
       idempotencyKeys.current.delete(creditId);
       setResetError(outcome === "nothingToReset"
-        ? "当前用量无需重置，这张卡仍未使用。"
+        ? text.nothingToReset
         : outcome === "noCredit"
-          ? "账户中没有可用的重置卡。"
-          : `Codex 返回了未确认的结果：${outcome}`);
+          ? text.noCredit
+          : `${text.unconfirmedOutcome}${outcome}`);
       setDialogState("error");
     } catch (error) {
       setResetError(error instanceof Error ? error.message : String(error));
@@ -219,30 +498,64 @@ export function UsageTooltipWindow() {
         if (isTauri()) void invoke("keep_usage_tooltip");
       }}
       onMouseLeave={() => {
-        if (isTauri()) void invoke("hide_usage_tooltip", { delayMs: 100 });
+        if (!isTauri()) return;
+        if (themeTransitioning.current) {
+          window.clearTimeout(themeLeaveCheckTimer.current);
+          themeLeaveCheckTimer.current = window.setTimeout(() => {
+            if (!tooltipRef.current?.matches(":hover")) {
+              void invoke("hide_usage_tooltip", { delayMs: 100 });
+            }
+          }, 560);
+          return;
+        }
+        void invoke("hide_usage_tooltip", { delayMs: 100 });
       }}
     >
       <section
         className={`usage-tooltip${viewMode === "tray-preview" ? " usage-tooltip--tray-preview" : ""}${dialogState ? " usage-tooltip--dialog-open" : ""}`}
-        aria-label={viewMode === "tray-preview" ? "CapsuleMeterX usage preview" : "Usage details"}
+        aria-label={viewMode === "tray-preview" ? text.usagePreview : text.usageDetails}
         ref={tooltipRef}
       >
+        <header className="usage-tooltip__header">
+          <h1 className="usage-tooltip__title">
+            {viewMode === "tray-preview" ? "CapsuleMeterX" : usage.planName || "ChatGPT"}
+          </h1>
+          <div className="usage-tooltip__toolbar">
+            <button
+              className="usage-tooltip__toolbar-button"
+              type="button"
+              aria-label={language === "zh" ? text.switchToEnglish : text.switchToChinese}
+              title={language === "zh" ? text.switchToEnglish : text.switchToChinese}
+              onClick={() => setLanguage((current) => current === "zh" ? "en" : "zh")}
+            >
+              <LanguagesIcon />
+            </button>
+            <button
+              className="usage-tooltip__toolbar-button"
+              type="button"
+              aria-label={theme === "dark" ? text.switchToLight : text.switchToDark}
+              title={theme === "dark" ? text.switchToLight : text.switchToDark}
+              onClick={toggleTheme}
+            >
+              {theme === "dark" ? <SunIcon /> : <MoonIcon />}
+            </button>
+          </div>
+        </header>
         {viewMode === "tray-preview" ? (
           <>
-            <h1 className="usage-tooltip__title">CapsuleMeterX</h1>
             <div className="tray-preview__usage">
               <span className="tray-preview__metric">
-                <span>5h</span>
+                <span>{text.previewFiveHour}</span>
                 <strong>{remainingLabel(usage.fiveHour)}</strong>
               </span>
               <span className="tray-preview__separator" aria-hidden="true">·</span>
               <span className="tray-preview__metric">
-                <span>Week</span>
+                <span>{text.previewWeekly}</span>
                 <strong>{remainingLabel(usage.weekly)}</strong>
               </span>
             </div>
             {usage.status === "offline" && (
-              <p className="tray-preview__offline">Codex App Server 未连接</p>
+              <p className="tray-preview__offline">{text.offline}</p>
             )}
             <button
               className="tray-preview__details-button"
@@ -251,48 +564,52 @@ export function UsageTooltipWindow() {
                 if (isTauri()) void invoke("show_tray_usage_details");
               }}
             >
-              点击查看详情 <span aria-hidden="true">→</span>
+              {text.previewDetails} <span aria-hidden="true">→</span>
             </button>
           </>
         ) : (
           <>
-            <h1 className="usage-tooltip__title">{usage.planName || "ChatGPT"}</h1>
-
             {usage.status === "offline" && (
-              <p className="usage-tooltip__offline">无法连接 Codex App Server</p>
+              <p className="usage-tooltip__offline">{text.offline}</p>
             )}
 
             <div className="usage-tooltip__periods">
               <div className="usage-window">
-                <UsageRing window={usage.fiveHour} label="5 小时剩余" />
+                <UsageRing window={usage.fiveHour} label={text.fiveHour} />
                 <div className="usage-window__summary">
-                  <strong>5 小时剩余</strong>
-                  <span>下次重置</span>
+                  <strong>{text.fiveHour}</strong>
+                  <span>{text.nextReset}</span>
                 </div>
                 <span className="usage-window__time">
                   {resetCountdown(usage.fiveHour, now)} · {resetClockLabel(usage.fiveHour)}
                 </span>
               </div>
               <div className="usage-window">
-                <UsageRing window={usage.weekly} label="本周剩余" />
+                <UsageRing window={usage.weekly} label={text.weekly} />
                 <div className="usage-window__summary">
-                  <strong>本周剩余</strong>
-                  <span>下次重置</span>
+                  <strong>{text.weekly}</strong>
+                  <span>{text.nextReset}</span>
                 </div>
                 <span className="usage-window__time">
-                  {weeklyResetLabel(usage.weekly)}
+                  {weeklyResetLabel(usage.weekly, language)}
                 </span>
               </div>
             </div>
 
             <div className="reset-cards">
               <div className="reset-cards__heading">
-                <h2>剩余重置卡</h2>
-                <span>{resetCardCount === null ? "--" : `${resetCardCount} 张`}</span>
+                <h2>{text.resetCards}</h2>
+                <span>
+                  {resetCardCount === null
+                    ? "--"
+                    : language === "zh"
+                      ? `${resetCardCount} ${text.cardCountUnit}`
+                      : `${resetCardCount} ${resetCardCount === 1 ? "card" : text.cardCountUnit}`}
+                </span>
               </div>
 
               {visibleCards.map((card, index) => {
-                const expiry = expiryLabel(card, now);
+                const expiry = expiryLabel(card, now, language);
                 const expiryText = typeof expiry === "string" ? expiry : expiry.label;
                 const expiryColor = typeof expiry === "string" ? "var(--text-weak)" : expiry.color;
                 const expired = card.expiresAt !== null && card.expiresAt <= now / 1000;
@@ -304,21 +621,21 @@ export function UsageTooltipWindow() {
                   !expired,
                 );
                 const disabledReason = usage.status !== "online"
-                  ? "连接 Codex 后才能使用重置卡"
+                  ? text.noConnection
                   : expired
-                    ? "这张重置卡已过期"
+                    ? text.expiredCard
                     : !card.id || card.resetType !== "codexRateLimits"
-                      ? "缺少可验证的重置卡标识，暂不能安全使用"
+                      ? text.unavailableCard
                       : undefined;
 
                 return (
                   <article
-                    className={`reset-card reset-card--${index % 2 === 0 ? "blue" : "violet"}`}
+                    className={`reset-card reset-card--${index % 2 === 0 ? "blue" : "violet"}${canRedeem ? "" : " reset-card--disabled"}`}
                     key={card.id ?? `reset-card-${index}`}
                   >
-                    <div className="reset-card__icon"><TicketIcon /></div>
+                    <div className="reset-card__icon"><ResetCardIcon /></div>
                     <div className="reset-card__expiry">
-                      <span>离有效时间还剩</span>
+                      <span>{text.cardExpiry}</span>
                       <strong style={{ color: expiryColor }}>{expiryText}</strong>
                     </div>
                     <button
@@ -328,7 +645,7 @@ export function UsageTooltipWindow() {
                       title={disabledReason}
                       onClick={() => openResetDialog(card)}
                     >
-                      重置
+                      {text.reset}
                     </button>
                   </article>
                 );
@@ -337,14 +654,14 @@ export function UsageTooltipWindow() {
               {visibleCards.length === 0 && (
                 <p className="reset-cards__empty">
                   {resetCardCount === 0
-                    ? "暂无可用重置卡"
+                    ? text.noCards
                     : resetCardCount === null
-                      ? "正在读取重置卡信息…"
-                      : "暂时无法读取卡片详情，无法安全地指定卡片。"}
+                      ? text.loadingCards
+                      : text.unavailableCardDetails}
                 </p>
               )}
               {resetCardCount !== null && resetCardCount > visibleCards.length && (
-                <p className="reset-cards__note">其余卡片详情暂不可用</p>
+                <p className="reset-cards__note">{text.otherCardsUnavailable}</p>
               )}
             </div>
           </>
@@ -359,46 +676,48 @@ export function UsageTooltipWindow() {
           >
             <section className="reset-dialog" role="dialog" aria-modal="true" aria-labelledby="reset-dialog-title">
               {dialogState !== "loading" && (
-                <button className="reset-dialog__close" type="button" aria-label="关闭" onClick={closeResetDialog}>
-                  ×
+                <button className="reset-dialog__close" type="button" aria-label={text.close} onClick={closeResetDialog}>
+                  <CloseIcon />
                 </button>
               )}
               <div className={`reset-dialog__symbol reset-dialog__symbol--${dialogState}`}>
                 {dialogState === "loading" ? (
-                  <span className="reset-dialog__spinner" aria-hidden="true" />
+                  <LoaderCircleIcon />
                 ) : dialogState === "success" ? (
-                  <span aria-hidden="true">✓</span>
+                  <CheckCircle2Icon />
+                ) : dialogState === "error" ? (
+                  <AlertCircleIcon />
                 ) : (
-                  <TicketIcon />
+                  <ResetCardIcon />
                 )}
               </div>
               <h2 id="reset-dialog-title">
                 {dialogState === "confirm"
-                  ? "确认使用重置卡？"
+                  ? text.confirmTitle
                   : dialogState === "loading"
-                    ? "正在使用重置卡…"
+                    ? text.loadingTitle
                     : dialogState === "success"
-                      ? "重置成功"
-                      : "重置失败"}
+                      ? text.successTitle
+                      : text.errorTitle}
               </h2>
               <p className="reset-dialog__message" role={dialogState === "error" ? "alert" : undefined}>
                 {dialogState === "confirm"
-                  ? "确定使用这张重置卡吗？此操作可能无法撤销。"
+                  ? text.confirmMessage
                   : dialogState === "loading"
-                    ? "请稍候，正在等待 Codex 确认重置结果。"
+                    ? text.loadingMessage
                     : dialogState === "success"
-                      ? "Codex 已确认重置完成，正在刷新用量。"
-                      : resetError}
+                      ? text.successMessage
+                      : localizeResetError(resetError, language)}
               </p>
               <div className="reset-dialog__card">
-                <span className="reset-dialog__card-icon"><TicketIcon /></span>
-                <span>重置卡有效期还剩</span>
-                <strong>{expiryDaysLabel(selectedCard, now)}</strong>
+                <span className="reset-dialog__card-icon"><ResetCardIcon /></span>
+                <span>{text.cardRemaining}</span>
+                <strong>{expiryDaysLabel(selectedCard, now, language)}</strong>
               </div>
               <div className={`reset-dialog__actions reset-dialog__actions--${dialogState}`}>
                 {dialogState === "success" ? (
                   <button className="reset-dialog__primary" type="button" onClick={closeResetDialog}>
-                    确定
+                    {text.done}
                   </button>
                 ) : (
                   <>
@@ -408,7 +727,8 @@ export function UsageTooltipWindow() {
                       disabled={dialogState === "loading"}
                       onClick={closeResetDialog}
                     >
-                      取消
+                      <CloseIcon />
+                      {text.cancel}
                     </button>
                     {dialogState !== "loading" && (
                       <button
@@ -417,13 +737,13 @@ export function UsageTooltipWindow() {
                         onClick={() => void confirmReset()}
                         disabled={selectedCard.expiresAt !== null && selectedCard.expiresAt <= now / 1000}
                       >
-                        {dialogState === "error" ? "重试" : "确认重置"}
+                        {dialogState === "error" ? text.retry : text.confirmReset}
                       </button>
                     )}
                     {dialogState === "loading" && (
                       <button className="reset-dialog__primary" type="button" disabled>
-                        <span className="reset-dialog__spinner reset-dialog__spinner--button" aria-hidden="true" />
-                        正在使用重置卡…
+                        <LoaderCircleIcon button />
+                        {text.usingCard}
                       </button>
                     )}
                   </>

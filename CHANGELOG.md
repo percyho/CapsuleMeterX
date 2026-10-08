@@ -4,11 +4,19 @@
 
 ### Added
 
+- Added restrained icon feedback for fast-mode activation, usage updates, reset-card hover, and reset outcomes.
+- Added static refresh and exit icons to the native system-tray menu.
 - Redesigned the usage details panel with remaining-usage rings, localized reset times, and a compact dark layout.
 - Added reset-card expiry details, expiry urgency colors, and a confirmation flow before card use.
 - Added reset-card consumption through the Codex App Server, with per-card request protection and usage refresh after confirmed success.
 
 ### Changed
 
+- Replaced the tray percentage glyph with a transparent-center, five-hour usage ring using four remaining-usage alert colors.
+- Opened the full interactive usage panel on tray hover and aligned its DPI-aware bounds to the tray monitor.
+- Avoided resetting the native tray icon when its five-hour remaining percentage has not changed.
+- Preserved the measured usage-panel height when opening from the tray to prevent clipped details.
+- Doubled the usage ring stroke width and matched reset-card icons to the reference ticket outline.
+- Kept all icon animations CSS-based and honored the system reduced-motion preference without adding dependencies.
 - Adjusted the details tooltip width to fit the redesigned panel without a scrollbar.
 - Kept the details panel open while the pointer moves from the capsule and enabled interaction with reset-card controls.

@@ -11,7 +11,7 @@ use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::{Duration, Instant};
 use tauri::image::Image;
-use tauri::menu::{Menu, MenuItem};
+use tauri::menu::{IconMenuItem, Menu};
 use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
 use tauri::{AppHandle, Emitter, LogicalSize, Manager, PhysicalPosition, Rect, State, WindowEvent};
 
@@ -21,10 +21,9 @@ const TRAY_ID: &str = "capsulemeterx-tray";
 const ICON_SIZE: u32 = 32;
 const CAPSULE_WIDTH: f64 = 120.0;
 const CAPSULE_HEIGHT: f64 = 32.0;
-const TOOLTIP_WIDTH: f64 = 380.0;
-const TOOLTIP_PREVIEW_WIDTH: f64 = 220.0;
+const TOOLTIP_WIDTH: f64 = 360.0;
 const TOOLTIP_MIN_WIDTH: f64 = 220.0;
-const TOOLTIP_HEIGHT: f64 = 160.0;
+const TOOLTIP_HEIGHT: f64 = 420.0;
 const TOOLTIP_MIN_HEIGHT: f64 = 80.0;
 const POLL_INTERVAL: Duration = Duration::from_secs(120);
 const FAST_MODE_POLL_INTERVAL: Duration = Duration::from_secs(10);
@@ -240,10 +239,20 @@ fn resize_usage_tooltip(app: AppHandle, width: f64, height: f64) -> Result<(), S
         return Err("Capsule window is unavailable".into());
     };
 
-    let max_height = capsule
-        .current_monitor()
-        .ok()
-        .flatten()
+    let tray_anchor = app
+        .try_state::<AppState>()
+        .and_then(|state| state.tray_anchor.lock().ok().and_then(|anchor| *anchor));
+    let monitor = tray_anchor
+        .and_then(|anchor| {
+            app.monitor_from_point(
+                anchor.x + anchor.width / 2.0,
+                anchor.y + anchor.height / 2.0,
+            )
+            .ok()
+            .flatten()
+        })
+        .or_else(|| capsule.current_monitor().ok().flatten());
+    let max_height = monitor
         .map(|monitor| monitor.work_area().size.height as f64 / monitor.scale_factor())
         .unwrap_or(f64::MAX);
     let width = if width.is_finite() {
@@ -260,9 +269,6 @@ fn resize_usage_tooltip(app: AppHandle, width: f64, height: f64) -> Result<(), S
     tooltip
         .set_size(LogicalSize::new(width, height))
         .map_err(|error| error.to_string())?;
-    let tray_anchor = app
-        .try_state::<AppState>()
-        .and_then(|state| state.tray_anchor.lock().ok().and_then(|anchor| *anchor));
     if let Some(anchor) = tray_anchor {
         position_tray_tooltip(&app, &tooltip, anchor);
     } else {
@@ -318,12 +324,6 @@ fn show_tray_tooltip_window(
     let Some(tooltip) = app.get_webview_window(TOOLTIP_LABEL) else {
         return Err("Tooltip window is unavailable".into());
     };
-    let (initial_width, initial_height) = if mode == "tray-preview" {
-        (TOOLTIP_PREVIEW_WIDTH, 120.0)
-    } else {
-        (TOOLTIP_WIDTH, TOOLTIP_HEIGHT)
-    };
-    let _ = tooltip.set_size(LogicalSize::new(initial_width, initial_height));
     position_tray_tooltip(app, &tooltip, anchor);
     let _ = tooltip.set_always_on_top(true);
     tooltip.show().map_err(|error| error.to_string())?;
@@ -691,172 +691,193 @@ fn place_capsule(app: &AppHandle, window: &tauri::WebviewWindow) {
 }
 
 fn usage_icon(snapshot: &UsageSnapshot) -> Image<'static> {
+    const SUBPIXEL_SAMPLES: usize = 4;
+    const TRACK: [u8; 3] = [0x34, 0x3b, 0x46];
+    const UNKNOWN: [u8; 3] = [0x8b, 0x93, 0x9e];
+
     let size = ICON_SIZE as usize;
     let mut pixels = vec![0_u8; size * size * 4];
-    let mut text_mask = vec![0.0_f32; size * size];
-    let center = (ICON_SIZE as f32 - 1.0) / 2.0;
-    let ring_radius = 13.0_f32;
-    let ring_width = 2.2_f32;
-    let is_offline = snapshot.status == "offline";
-    let remaining = snapshot
-        .five_hour
-        .as_ref()
-        .or(snapshot.weekly.as_ref())
-        .map(|window| window.remaining_percent.min(100));
-    let percent = if is_offline { None } else { remaining };
-    let display = if is_offline {
-        "!".to_owned()
+    let remaining = if snapshot.status == "online" {
+        snapshot
+            .five_hour
+            .as_ref()
+            .map(|window| window.remaining_percent.min(100))
     } else {
-        percent
-            .map(|value| value.to_string())
-            .unwrap_or_else(|| "--".to_owned())
+        None
     };
-    let progress = match percent {
-        Some(_) => [0, 238, 207],
-        None => [107, 114, 128],
+    let progress = match remaining {
+        Some(value) if value >= 60 => [0x19, 0xe6, 0xb5],
+        Some(value) if value >= 30 => [0xff, 0xd4, 0x49],
+        Some(value) if value >= 10 => [0xff, 0x92, 0x3f],
+        Some(_) => [0xff, 0x4d, 0x68],
+        None => UNKNOWN,
     };
-    let track = if percent.is_some() {
-        [0, 110, 105]
-    } else {
-        [107, 114, 128]
-    };
-    let sweep = percent
+    let center = 16.0_f32;
+    let ring_radius = 11.5_f32;
+    let ring_half_width = 1.75_f32;
+    let sweep = remaining
         .map(|value| std::f32::consts::TAU * value as f32 / 100.0)
         .unwrap_or(0.0);
-    let cap_radius = ring_width / 2.0 + 0.3;
-    let start_x = center;
-    let start_y = center - ring_radius;
     let end_x = center + ring_radius * sweep.sin();
     let end_y = center - ring_radius * sweep.cos();
+    let total_samples = (SUBPIXEL_SAMPLES * SUBPIXEL_SAMPLES) as u32;
 
     for y in 0..size {
         for x in 0..size {
-            let dx = x as f32 - center;
-            let dy = y as f32 - center;
-            let distance = (dx * dx + dy * dy).sqrt();
-            let edge = (ring_width / 2.0 + 0.3 - (distance - ring_radius).abs()).clamp(0.0, 1.0);
-            let mut angle = dy.atan2(dx) + std::f32::consts::FRAC_PI_2;
-            if angle < 0.0 {
-                angle += std::f32::consts::TAU;
+            let mut stroke_samples = 0_u32;
+            let mut progress_samples = 0_u32;
+            for sample_y in 0..SUBPIXEL_SAMPLES {
+                for sample_x in 0..SUBPIXEL_SAMPLES {
+                    let px = x as f32 + (sample_x as f32 + 0.5) / SUBPIXEL_SAMPLES as f32;
+                    let py = y as f32 + (sample_y as f32 + 0.5) / SUBPIXEL_SAMPLES as f32;
+                    let dx = px - center;
+                    let dy = py - center;
+                    let distance = (dx * dx + dy * dy).sqrt();
+                    if (distance - ring_radius).abs() > ring_half_width {
+                        continue;
+                    }
+
+                    stroke_samples += 1;
+                    let active = match remaining {
+                        None => true,
+                        Some(0) => false,
+                        Some(value) if value >= 100 => true,
+                        Some(_) => {
+                            let angle = (dy.atan2(dx) + std::f32::consts::FRAC_PI_2)
+                                .rem_euclid(std::f32::consts::TAU);
+                            let near_start =
+                                dx * dx + (dy + ring_radius).powi(2) <= ring_half_width.powi(2);
+                            let end_dx = px - end_x;
+                            let end_dy = py - end_y;
+                            let near_end =
+                                end_dx * end_dx + end_dy * end_dy <= ring_half_width.powi(2);
+                            angle <= sweep || near_start || near_end
+                        }
+                    };
+                    if active {
+                        progress_samples += 1;
+                    }
+                }
             }
-            let near_start = percent.is_some_and(|value| value > 0)
-                && ((x as f32 - start_x).powi(2) + (y as f32 - start_y).powi(2)).sqrt()
-                    <= cap_radius;
-            let near_end = percent.is_some_and(|value| value > 0)
-                && ((x as f32 - end_x).powi(2) + (y as f32 - end_y).powi(2)).sqrt() <= cap_radius;
-            let active = percent.is_some_and(|value| value > 0)
-                && (angle <= sweep || near_start || near_end);
-            if edge <= 0.0 {
+
+            if stroke_samples == 0 {
                 continue;
             }
 
-            let rgb = if active { progress } else { track };
-            let opacity = if active {
-                255.0
-            } else if percent.is_some() {
-                166.0
+            let track_samples = stroke_samples - progress_samples;
+            let color = if remaining.is_none() {
+                UNKNOWN
             } else {
-                210.0
+                [
+                    ((progress[0] as u32 * progress_samples + TRACK[0] as u32 * track_samples)
+                        / stroke_samples) as u8,
+                    ((progress[1] as u32 * progress_samples + TRACK[1] as u32 * track_samples)
+                        / stroke_samples) as u8,
+                    ((progress[2] as u32 * progress_samples + TRACK[2] as u32 * track_samples)
+                        / stroke_samples) as u8,
+                ]
             };
-            let alpha = (opacity * edge).round() as u8;
-            set_pixel(&mut pixels, size, x, y, [rgb[0], rgb[1], rgb[2], alpha]);
-        }
-    }
-
-    let glyph_scale = match display.len() {
-        1 => 3.1_f32,
-        2 => 2.5_f32,
-        _ => 1.6_f32,
-    };
-    let glyph_gap = glyph_scale;
-    let text_width = (display.len() as f32 * 3.0 + (display.len() - 1) as f32) * glyph_scale;
-    let text_height = 5.0 * glyph_scale;
-    let text_left = center - text_width / 2.0;
-    let text_top = center - text_height / 2.0;
-    for (index, character) in display.chars().enumerate() {
-        let rows = glyph_rows(character);
-        let glyph_left = text_left + index as f32 * (3.0 * glyph_scale + glyph_gap);
-        for (row, bits) in rows.iter().enumerate() {
-            for column in 0..3 {
-                if bits & (1 << (2 - column)) != 0 {
-                    add_rect_coverage(
-                        &mut text_mask,
-                        size,
-                        glyph_left + column as f32 * glyph_scale,
-                        text_top + row as f32 * glyph_scale,
-                        glyph_scale,
-                        glyph_scale,
-                    );
-                }
-            }
-        }
-    }
-    for (index, coverage) in text_mask.into_iter().enumerate() {
-        if coverage > 0.0 {
-            let offset = index * 4;
-            let text_color = if percent.is_some() {
-                [0, 255, 220]
-            } else {
-                [196, 204, 211]
-            };
-            pixels[offset..offset + 4].copy_from_slice(&[
-                text_color[0],
-                text_color[1],
-                text_color[2],
-                (coverage * 255.0).round() as u8,
-            ]);
+            let alpha = ((stroke_samples * 255 + total_samples / 2) / total_samples) as u8;
+            let offset = (y * size + x) * 4;
+            pixels[offset..offset + 4].copy_from_slice(&[color[0], color[1], color[2], alpha]);
         }
     }
 
     Image::new_owned(pixels, ICON_SIZE, ICON_SIZE)
 }
 
-fn glyph_rows(character: char) -> [u8; 5] {
-    match character {
-        '0' => [0b111, 0b101, 0b101, 0b101, 0b111],
-        '1' => [0b010, 0b110, 0b010, 0b010, 0b111],
-        '2' => [0b111, 0b001, 0b111, 0b100, 0b111],
-        '3' => [0b111, 0b001, 0b111, 0b001, 0b111],
-        '4' => [0b101, 0b101, 0b111, 0b001, 0b001],
-        '5' => [0b111, 0b100, 0b111, 0b001, 0b111],
-        '6' => [0b111, 0b100, 0b111, 0b101, 0b111],
-        '7' => [0b111, 0b001, 0b010, 0b010, 0b010],
-        '8' => [0b111, 0b101, 0b111, 0b101, 0b111],
-        '9' => [0b111, 0b101, 0b111, 0b001, 0b111],
-        '-' => [0b000, 0b000, 0b111, 0b000, 0b000],
-        '!' => [0b010, 0b010, 0b010, 0b000, 0b010],
-        _ => [0; 5],
+fn tray_remaining_percent(snapshot: &UsageSnapshot) -> Option<u8> {
+    if snapshot.status != "online" {
+        return None;
     }
+
+    snapshot
+        .five_hour
+        .as_ref()
+        .map(|window| window.remaining_percent.min(100))
 }
 
-fn add_rect_coverage(mask: &mut [f32], size: usize, left: f32, top: f32, width: f32, height: f32) {
-    let right = left + width;
-    let bottom = top + height;
-    for y in top.floor().max(0.0) as usize..bottom.ceil().min(size as f32) as usize {
-        for x in left.floor().max(0.0) as usize..right.ceil().min(size as f32) as usize {
-            let covered_width = (right.min(x as f32 + 1.0) - left.max(x as f32)).max(0.0);
-            let covered_height = (bottom.min(y as f32 + 1.0) - top.max(y as f32)).max(0.0);
-            let coverage = covered_width * covered_height;
-            let index = y * size + x;
-            mask[index] = 1.0 - (1.0 - mask[index]) * (1.0 - coverage);
+fn refresh_menu_icon() -> Image<'static> {
+    menu_icon_from_segments(&[
+        (3.5, 7.1, 4.0, 5.4),
+        (4.0, 5.4, 5.1, 4.0),
+        (5.1, 4.0, 6.8, 3.2),
+        (6.8, 3.2, 8.7, 3.0),
+        (8.7, 3.0, 10.5, 3.5),
+        (10.5, 3.5, 12.0, 4.7),
+        (12.0, 4.7, 12.0, 2.4),
+        (12.0, 4.7, 9.7, 4.7),
+        (12.5, 8.9, 12.0, 10.4),
+        (12.0, 10.4, 10.7, 11.9),
+        (10.7, 11.9, 8.9, 12.7),
+        (8.9, 12.7, 6.9, 12.4),
+        (6.9, 12.4, 5.1, 11.4),
+        (5.1, 11.4, 3.5, 9.9),
+        (3.5, 9.9, 3.5, 12.2),
+        (3.5, 9.9, 5.8, 9.9),
+    ])
+}
+
+fn exit_menu_icon() -> Image<'static> {
+    menu_icon_from_segments(&[
+        (9.0, 3.0, 5.0, 3.0),
+        (5.0, 3.0, 5.0, 13.0),
+        (5.0, 13.0, 9.0, 13.0),
+        (7.5, 8.0, 14.0, 8.0),
+        (11.0, 5.0, 14.0, 8.0),
+        (14.0, 8.0, 11.0, 11.0),
+    ])
+}
+
+fn menu_icon_from_segments(segments: &[(f32, f32, f32, f32)]) -> Image<'static> {
+    const SIZE: usize = 16;
+    const COLOR: [u8; 3] = [126, 136, 147];
+    let mut pixels = vec![0_u8; SIZE * SIZE * 4];
+
+    for &(x1, y1, x2, y2) in segments {
+        let dx = x2 - x1;
+        let dy = y2 - y1;
+        let length_squared = dx * dx + dy * dy;
+        for y in 0..SIZE {
+            for x in 0..SIZE {
+                let px = x as f32 + 0.5;
+                let py = y as f32 + 0.5;
+                let projection = if length_squared == 0.0 {
+                    0.0
+                } else {
+                    (((px - x1) * dx + (py - y1) * dy) / length_squared).clamp(0.0, 1.0)
+                };
+                let closest_x = x1 + projection * dx;
+                let closest_y = y1 + projection * dy;
+                let distance = ((px - closest_x).powi(2) + (py - closest_y).powi(2)).sqrt();
+                let coverage = (1.25 - distance).clamp(0.0, 1.0);
+                let offset = (y * SIZE + x) * 4;
+                let alpha = (coverage * 255.0).round() as u8;
+                if alpha > pixels[offset + 3] {
+                    pixels[offset..offset + 4]
+                        .copy_from_slice(&[COLOR[0], COLOR[1], COLOR[2], alpha]);
+                }
+            }
         }
     }
-}
 
-fn set_pixel(pixels: &mut [u8], size: usize, x: usize, y: usize, color: [u8; 4]) {
-    let offset = (y * size + x) * 4;
-    pixels[offset..offset + 4].copy_from_slice(&color);
+    Image::new_owned(pixels, SIZE as u32, SIZE as u32)
 }
 
 fn publish_usage(app: &AppHandle, snapshot: UsageSnapshot) {
+    let mut update_tray_icon = true;
     if let Some(state) = app.try_state::<AppState>() {
         if let Ok(mut current) = state.usage.lock() {
+            update_tray_icon =
+                tray_remaining_percent(&current) != tray_remaining_percent(&snapshot);
             *current = snapshot.clone();
         }
     }
 
-    if let Some(tray) = app.tray_by_id(TRAY_ID) {
-        let _ = tray.set_icon(Some(usage_icon(&snapshot)));
+    if update_tray_icon {
+        if let Some(tray) = app.tray_by_id(TRAY_ID) {
+            let _ = tray.set_icon(Some(usage_icon(&snapshot)));
+        }
     }
 
     let _ = app.emit("usage-updated", snapshot);
@@ -1471,8 +1492,22 @@ fn run_usage_worker(
 }
 
 fn create_tray(app: &tauri::App) -> tauri::Result<()> {
-    let refresh = MenuItem::with_id(app, "refresh", "立即刷新", true, None::<&str>)?;
-    let quit = MenuItem::with_id(app, "quit", "退出 CapsuleMeterX", true, None::<&str>)?;
+    let refresh = IconMenuItem::with_id(
+        app,
+        "refresh",
+        "立即刷新",
+        true,
+        Some(refresh_menu_icon()),
+        None::<&str>,
+    )?;
+    let quit = IconMenuItem::with_id(
+        app,
+        "quit",
+        "退出 CapsuleMeterX",
+        true,
+        Some(exit_menu_icon()),
+        None::<&str>,
+    )?;
     let menu = Menu::with_items(app, &[&refresh, &quit])?;
 
     TrayIconBuilder::with_id(TRAY_ID)
@@ -1501,13 +1536,7 @@ fn create_tray(app: &tauri::App) -> tauri::Result<()> {
                         thread::sleep(Duration::from_millis(300));
                         if guard.load(Ordering::SeqCst) == epoch {
                             let state = app.state::<AppState>();
-                            let _ = show_tray_tooltip_window(
-                                &app,
-                                &state,
-                                anchor,
-                                "tray-preview",
-                                None,
-                            );
+                            let _ = show_tray_tooltip_window(&app, &state, anchor, "details", None);
                         }
                     });
                 }
@@ -1535,7 +1564,7 @@ fn create_tray(app: &tauri::App) -> tauri::Result<()> {
                         &state,
                         tray_anchor_from_rect(rect),
                         "details",
-                        Some(Duration::from_secs(5)),
+                        None,
                     );
                 }
                 _ => {}

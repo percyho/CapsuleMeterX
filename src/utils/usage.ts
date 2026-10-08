@@ -56,23 +56,31 @@ export function weeklyResetCountdown(window: UsageWindow | null, now: number): s
   return "<1m";
 }
 
-export function resetCardExpiryCountdown(expiresAt: number, now: number): {
+export function resetCardExpiryCountdown(expiresAt: number, now: number, language: "zh" | "en" = "zh"): {
   label: string;
   color: string;
 } {
   const seconds = Math.floor(expiresAt - now / 1000);
-  if (seconds <= 0) return { label: "已过期", color: "var(--usage-danger)" };
+  if (seconds <= 0) return { label: language === "zh" ? "已过期" : "Expired", color: "var(--usage-danger)" };
 
   const days = Math.floor(seconds / 86_400);
   const hours = Math.floor((seconds % 86_400) / 3_600);
   const minutes = Math.floor((seconds % 3_600) / 60);
-  const label = days > 0
-    ? `${days} 天${hours > 0 ? ` ${hours} 小时` : ""}`
-    : hours > 0
-      ? `${hours} 小时${minutes > 0 ? ` ${minutes} 分钟` : ""}`
-      : minutes > 0
-        ? `${minutes} 分钟`
-        : "少于 1 分钟";
+  const label = language === "zh"
+    ? days > 0
+      ? `${days} 天${hours > 0 ? ` ${hours} 小时` : ""}`
+      : hours > 0
+        ? `${hours} 小时${minutes > 0 ? ` ${minutes} 分钟` : ""}`
+        : minutes > 0
+          ? `${minutes} 分钟`
+          : "少于 1 分钟"
+    : days > 0
+      ? `${days}d${hours > 0 ? ` ${hours}h` : ""}`
+      : hours > 0
+        ? `${hours}h${minutes > 0 ? ` ${minutes}m` : ""}`
+        : minutes > 0
+          ? `${minutes}m`
+          : "Less than 1 minute";
   const color = seconds <= 86_400
     ? "var(--usage-danger)"
     : seconds <= 604_800
@@ -121,11 +129,11 @@ export function resetTimeLabel(window: UsageWindow | null, now: number): string 
   }).format(resetDate);
 }
 
-export function weeklyResetLabel(window: UsageWindow | null): string {
+export function weeklyResetLabel(window: UsageWindow | null, language: "zh" | "en" = "zh"): string {
   if (window?.resetsAt == null) return "--";
 
   const resetDate = new Date(window.resetsAt * 1000);
-  const weekday = new Intl.DateTimeFormat("zh-CN", {
+  const weekday = new Intl.DateTimeFormat(language === "zh" ? "zh-CN" : "en-US", {
     weekday: "short",
   }).format(resetDate);
   const time = new Intl.DateTimeFormat(undefined, {

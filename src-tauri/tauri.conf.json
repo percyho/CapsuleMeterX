@@ -38,10 +38,10 @@
       {
         "label": "tooltip",
         "title": "Usage details",
-        "width": 380,
-        "height": 160,
+        "width": 360,
+        "height": 420,
         "minWidth": 220,
-        "maxWidth": 380,
+        "maxWidth": 360,
         "minHeight": 80,
         "center": false,
         "visible": false,
