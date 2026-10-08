@@ -415,6 +415,17 @@ export function UsageTooltipWindow() {
   const toggleTheme = () => {
     const nextTheme: Theme = theme === "dark" ? "light" : "dark";
     const applyTheme = () => flushSync(() => setTheme(nextTheme));
+    for (const animation of document.getAnimations()) {
+      const effect = animation.effect;
+      if (
+        effect instanceof KeyframeEffect &&
+        (effect.pseudoElement === "::view-transition-old(root)" ||
+          effect.pseudoElement === "::view-transition-new(root)")
+      ) {
+        animation.cancel();
+      }
+    }
+    document.documentElement.dataset.themeTransitionTarget = nextTheme;
     const protectTooltip = () => {
       themeTransitioning.current = true;
       window.clearTimeout(themeGuardReleaseTimer.current);

@@ -1223,6 +1223,7 @@
 .statistics-chart {
   height: 120px;
   margin-top: 0;
+  overscroll-behavior: contain;
 }
 
 .statistics-chart__grid {
@@ -1402,4 +1403,253 @@
   .statistics-record time { font-size: 9px; }
   .statistics-record__event { display: none; }
   .statistics-record__value { padding: 2px 6px; font-size: 8px; }
+}
+
+.statistics-page,
+.statistics-page .statistics-summary,
+.statistics-page .statistics-detail-card,
+.statistics-page .statistics-close,
+.statistics-page .statistics-tabs,
+.statistics-page .statistics-tabs button,
+.statistics-page .statistics-export,
+.statistics-page .statistics-segmented,
+.statistics-page .statistics-segmented button {
+  transition: background-color 180ms ease, border-color 180ms ease, color 180ms ease, box-shadow 180ms ease;
+}
+
+:root[data-theme="dark"] .statistics-page {
+  border-color: var(--divider);
+  background: var(--panel-bg);
+  color: var(--text-primary);
+  box-shadow: var(--panel-shadow);
+}
+
+:root[data-theme="dark"] .statistics-page .statistics-header__subtitle,
+:root[data-theme="dark"] .statistics-page .statistics-summary__copy small,
+:root[data-theme="dark"] .statistics-page .statistics-detail-metric,
+:root[data-theme="dark"] .statistics-page .statistics-token-source,
+:root[data-theme="dark"] .statistics-page .statistics-legend,
+:root[data-theme="dark"] .statistics-page .statistics-token-summary > span,
+:root[data-theme="dark"] .statistics-page .statistics-token-summary > small,
+:root[data-theme="dark"] .statistics-page .statistics-record,
+:root[data-theme="dark"] .statistics-page .statistics-record time,
+:root[data-theme="dark"] .statistics-page .statistics-data-note,
+:root[data-theme="dark"] .statistics-page .statistics-empty,
+:root[data-theme="dark"] .statistics-page .statistics-chart__axis-label {
+  color: var(--text-secondary);
+}
+
+:root[data-theme="dark"] .statistics-page .statistics-header__icon {
+  background: rgba(135, 88, 245, 0.18);
+  color: #b49bff;
+}
+
+:root[data-theme="dark"] .statistics-page .statistics-close {
+  background: var(--card-bg);
+  color: var(--text-secondary);
+}
+
+:root[data-theme="dark"] .statistics-page .statistics-close:hover {
+  border-color: var(--control-border);
+  background: var(--control-hover);
+  color: var(--text-primary);
+}
+
+:root[data-theme="dark"] .statistics-page .statistics-tabs,
+:root[data-theme="dark"] .statistics-page .statistics-segmented {
+  background: var(--card-bg);
+}
+
+:root[data-theme="dark"] .statistics-page .statistics-tabs button,
+:root[data-theme="dark"] .statistics-page .statistics-segmented button {
+  color: var(--text-secondary);
+}
+
+:root[data-theme="dark"] .statistics-page .statistics-tabs button:hover,
+:root[data-theme="dark"] .statistics-page .statistics-segmented button:hover {
+  color: var(--text-primary);
+}
+
+:root[data-theme="dark"] .statistics-page .statistics-tabs button.is-active,
+:root[data-theme="dark"] .statistics-page .statistics-segmented button.is-active {
+  background: #343a40;
+  color: var(--text-primary);
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.28);
+}
+
+:root[data-theme="dark"] .statistics-page .statistics-summary,
+:root[data-theme="dark"] .statistics-page .statistics-token-summary,
+:root[data-theme="dark"] .statistics-page .statistics-detail-card {
+  border-color: var(--divider);
+  background: var(--card-bg);
+  box-shadow: none;
+}
+
+:root[data-theme="dark"] .statistics-page .statistics-summary__icon {
+  background: rgba(135, 88, 245, 0.17);
+  color: #b49bff;
+}
+
+:root[data-theme="dark"] .statistics-page .statistics-summary--blue .statistics-summary__icon {
+  background: rgba(67, 135, 232, 0.17);
+  color: #8bbaff;
+}
+
+:root[data-theme="dark"] .statistics-page .statistics-summary__copy > span,
+:root[data-theme="dark"] .statistics-page .statistics-summary > strong,
+:root[data-theme="dark"] .statistics-page .statistics-token-summary > strong,
+:root[data-theme="dark"] .statistics-page .statistics-detail-heading__title h2,
+:root[data-theme="dark"] .statistics-page .statistics-trend-heading > h3,
+:root[data-theme="dark"] .statistics-page .statistics-history__heading h3,
+:root[data-theme="dark"] .statistics-page .statistics-detail-metric strong {
+  color: var(--text-primary);
+}
+
+:root[data-theme="dark"] .statistics-page .statistics-summary--blue > strong {
+  color: #8bbaff;
+}
+
+:root[data-theme="dark"] .statistics-page .statistics-summary__track {
+  background: var(--usage-track);
+}
+
+:root[data-theme="dark"] .statistics-page .statistics-detail-heading__icon {
+  background: rgba(135, 88, 245, 0.17);
+  color: #b49bff;
+}
+
+:root[data-theme="dark"] .statistics-page .statistics-detail-heading__icon--token {
+  background: rgba(67, 135, 232, 0.17);
+  color: #8bbaff;
+}
+
+:root[data-theme="dark"] .statistics-page .statistics-detail-metric + .statistics-detail-metric {
+  border-color: var(--divider);
+}
+
+:root[data-theme="dark"] .statistics-page .statistics-export,
+:root[data-theme="dark"] .statistics-page .statistics-custom-range > div button {
+  border-color: var(--control-border);
+  background: var(--control-bg);
+  color: var(--text-primary);
+}
+
+:root[data-theme="dark"] .statistics-page .statistics-export:hover,
+:root[data-theme="dark"] .statistics-page .statistics-custom-range > div button:hover {
+  background: var(--control-hover);
+}
+
+:root[data-theme="dark"] .statistics-page .statistics-custom-range {
+  border-color: var(--control-border);
+  background: var(--card-bg);
+  box-shadow: var(--dialog-shadow);
+}
+
+:root[data-theme="dark"] .statistics-page .statistics-custom-range label {
+  color: var(--text-secondary);
+}
+
+:root[data-theme="dark"] .statistics-page .statistics-custom-range input {
+  border-color: var(--control-border);
+  background: var(--panel-bg);
+  color: var(--text-primary);
+}
+
+:root[data-theme="dark"] .statistics-page .statistics-custom-range > div button.is-primary {
+  border-color: #8d6af4;
+  background: #7954df;
+  color: #fff;
+}
+
+:root[data-theme="dark"] .statistics-page .statistics-chart__grid {
+  stroke: var(--divider);
+}
+
+:root[data-theme="dark"] .statistics-page .statistics-chart__axis-label {
+  fill: var(--text-secondary);
+}
+
+:root[data-theme="dark"] .statistics-page .statistics-detail-metric > svg {
+  stroke: var(--text-secondary);
+}
+
+:root[data-theme="dark"] .statistics-page .statistics-legend--button:hover {
+  border-color: var(--control-border);
+  background: var(--control-hover);
+}
+
+:root[data-theme="dark"] .statistics-page .statistics-chart__empty {
+  color: var(--text-secondary);
+}
+
+:root[data-theme="dark"] .statistics-page .statistics-chart__tooltip {
+  border-color: var(--control-border);
+  background: var(--card-bg);
+  box-shadow: var(--dialog-shadow);
+}
+
+:root[data-theme="dark"] .statistics-page .statistics-chart__tooltip strong,
+:root[data-theme="dark"] .statistics-page .statistics-record__event {
+  color: var(--text-primary);
+}
+
+:root[data-theme="dark"] .statistics-page .statistics-chart__tooltip span,
+:root[data-theme="dark"] .statistics-page .statistics-record__value {
+  color: #c4b5fd;
+}
+
+:root[data-theme="dark"] .statistics-page .statistics-chart__tooltip small,
+:root[data-theme="dark"] .statistics-page .statistics-record__reset {
+  color: var(--text-weak);
+}
+
+:root[data-theme="dark"] .statistics-page .statistics-history {
+  border-top-color: var(--divider);
+}
+
+:root[data-theme="dark"] .statistics-page .statistics-record-list,
+:root[data-theme="dark"] .statistics-page .statistics-record {
+  border-color: var(--divider);
+}
+
+:root[data-theme="dark"] .statistics-page .statistics-record__value {
+  background: rgba(135, 88, 245, 0.2);
+}
+
+:root[data-theme="dark"] .statistics-page .statistics-record-list--tokens .statistics-record__value {
+  background: rgba(37, 132, 216, 0.18);
+  color: #93c5fd;
+}
+
+:root[data-theme="dark"] .statistics-page .statistics-empty--error,
+:root[data-theme="dark"] .statistics-page .statistics-error {
+  border-color: rgba(239, 68, 68, 0.35);
+  background: rgba(239, 68, 68, 0.1);
+  color: #fca5a5;
+}
+
+:root[data-theme="dark"] .statistics-page .statistics-empty--error button,
+:root[data-theme="dark"] .statistics-page .statistics-error button {
+  border-color: var(--control-border);
+  background: var(--card-bg);
+  color: var(--text-primary);
+}
+
+:root[data-theme="dark"] .statistics-page .statistics-load-more {
+  color: #b49bff;
+}
+
+:root[data-theme="dark"] .statistics-page .statistics-load-more:hover {
+  background: var(--control-hover);
+}
+
+:root[data-theme="dark"] .statistics-page .statistics-inline-status {
+  color: #c4b5fd;
+}
+
+:root[data-theme="dark"] .statistics-page .statistics-toast {
+  border-color: var(--control-border);
+  background: var(--card-bg);
+  color: var(--text-primary);
+  box-shadow: var(--dialog-shadow);
 }

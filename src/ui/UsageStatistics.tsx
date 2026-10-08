@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { invoke, isTauri } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { save } from "@tauri-apps/plugin-dialog";
@@ -10,6 +10,7 @@ import "../statistics.css";
 type Tab = "quota" | "tokens";
 type QuotaPeriod = "fiveHour" | "weekly";
 type RangePreset = 7 | 30 | 90 | "custom";
+type Theme = "dark" | "light";
 
 interface DateRange {
   start: string;
@@ -105,6 +106,14 @@ function downsample(points: ChartDatum[], limit = 900): ChartDatum[] {
 
 function clamp(value: number, low: number, high: number): number {
   return Math.max(low, Math.min(high, value));
+}
+
+function readThemePreference(): Theme {
+  try {
+    return window.localStorage.getItem("capsulemeter-theme") === "light" ? "light" : "dark";
+  } catch {
+    return "dark";
+  }
 }
 
 function smoothPath(points: Point[]): string {
@@ -213,23 +222,33 @@ function TrendChart({
   data,
   mode,
   color,
+  zoomResetKey,
   hidden = false,
   emptyMessage = "暂无历史记录",
 }: {
   data: ChartDatum[];
   mode: "quota" | "tokens";
   color: string;
+  zoomResetKey: string;
   hidden?: boolean;
   emptyMessage?: string;
 }) {
   const [activePoint, setActivePoint] = useState<Point | null>(null);
+  const [timeDomain, setTimeDomain] = useState<{ min: number; max: number } | null>(null);
+  const chartRef = useRef<HTMLDivElement>(null);
   const plotted = useMemo(() => downsample(data), [data]);
   const maximum = mode === "quota"
     ? 100
     : niceTokenMaximum(data.reduce((current, point) => Math.max(current, point.value), 0));
   const timestamps = plotted.map((point) => point.timestamp);
-  const minTime = timestamps[0] ?? 0;
-  const maxTime = timestamps[timestamps.length - 1] ?? 0;
+  const dataMinTime = timestamps[0] ?? 0;
+  const dataMaxTime = timestamps[timestamps.length - 1] ?? 0;
+  const minTime = timeDomain
+    ? clamp(timeDomain.min, dataMinTime, dataMaxTime)
+    : dataMinTime;
+  const maxTime = timeDomain
+    ? clamp(timeDomain.max, minTime, dataMaxTime)
+    : dataMaxTime;
   const points: Point[] = plotted.map((point) => {
     const ratio = maxTime === minTime ? 0.5 : (point.timestamp - minTime) / (maxTime - minTime);
     return {
@@ -253,13 +272,59 @@ function TrendChart({
   const labelTimes = Array.from({ length: 7 }, (_, index) => minTime + (maxTime - minTime) * index / 6);
 
   useEffect(() => setActivePoint(null), [data, mode, hidden]);
+  useEffect(() => setTimeDomain(null), [zoomResetKey, mode, hidden]);
+
+  const handleChartWheel = useCallback((event: WheelEvent) => {
+    const fullSpan = dataMaxTime - dataMinTime;
+    if (fullSpan <= 0 || event.deltaY === 0) return;
+
+    const chart = chartRef.current;
+    const bounds = chart?.getBoundingClientRect();
+    if (!bounds || bounds.width <= 0) return;
+
+    event.preventDefault();
+    const plotLeft = bounds.left + bounds.width * PLOT.left / 860;
+    const plotWidth = bounds.width * (PLOT.right - PLOT.left) / 860;
+    const anchorRatio = clamp((event.clientX - plotLeft) / plotWidth, 0, 1);
+    const deltaY = event.deltaMode === 1 ? event.deltaY * 32 : event.deltaMode === 2 ? event.deltaY * 120 : event.deltaY;
+    const zoomFactor = Math.exp(-deltaY * 0.002);
+    const minSpan = Math.min(fullSpan, Math.max(60_000, fullSpan / 256));
+
+    setTimeDomain((current) => {
+      const currentMin = current ? clamp(current.min, dataMinTime, dataMaxTime) : dataMinTime;
+      const currentMax = current ? clamp(current.max, currentMin, dataMaxTime) : dataMaxTime;
+      const currentSpan = Math.max(1, currentMax - currentMin);
+      const nextSpan = clamp(currentSpan / zoomFactor, minSpan, fullSpan);
+      if (nextSpan >= fullSpan - 1) return null;
+
+      const anchorTime = currentMin + anchorRatio * currentSpan;
+      let nextMin = anchorTime - anchorRatio * nextSpan;
+      let nextMax = nextMin + nextSpan;
+      if (nextMin < dataMinTime) {
+        nextMin = dataMinTime;
+        nextMax = nextMin + nextSpan;
+      }
+      if (nextMax > dataMaxTime) {
+        nextMax = dataMaxTime;
+        nextMin = nextMax - nextSpan;
+      }
+      return { min: nextMin, max: nextMax };
+    });
+  }, [dataMinTime, dataMaxTime]);
+
+  useEffect(() => {
+    const chart = chartRef.current;
+    if (!chart) return;
+    chart.addEventListener("wheel", handleChartWheel, { passive: false });
+    return () => chart.removeEventListener("wheel", handleChartWheel);
+  }, [handleChartWheel, hidden]);
 
   if (data.length === 0 || hidden) {
     return <div className="statistics-chart__empty">{hidden ? "已隐藏总量曲线" : emptyMessage}</div>;
   }
 
   return (
-    <div className="statistics-chart">
+    <div className="statistics-chart" ref={chartRef} title="滚动滚轮缩放图表">
       <svg className="statistics-chart__svg" viewBox={`0 0 860 ${PLOT.height}`} preserveAspectRatio="none" role="img" aria-label={mode === "quota" ? "额度剩余趋势" : "每日 Token 总量趋势"}>
         <defs>
           <linearGradient id="statistics-chart-fill" x1="0" x2="0" y1="0" y2="1">
@@ -323,6 +388,7 @@ function TrendChart({
 
 export function UsageStatisticsPage() {
   const usage = useUsage();
+  const [theme, setTheme] = useState<Theme>(readThemePreference);
   const [tab, setTab] = useState<Tab>("quota");
   const [quotaPeriod, setQuotaPeriod] = useState<QuotaPeriod>("fiveHour");
   const [range, setRange] = useState<RangePreset>(7);
@@ -341,6 +407,32 @@ export function UsageStatisticsPage() {
   const [loadAttempt, setLoadAttempt] = useState(0);
   const [notice, setNotice] = useState("");
   const [visibleRecords, setVisibleRecords] = useState(5);
+
+  useLayoutEffect(() => {
+    document.documentElement.dataset.theme = theme;
+  }, [theme]);
+
+  useEffect(() => {
+    let disposed = false;
+    let unlisten: (() => void) | undefined;
+    const updateTheme = (value: string | null) => {
+      if (!disposed) setTheme(value === "light" ? "light" : "dark");
+    };
+    const handleStorage = (event: StorageEvent) => {
+      if (event.key === "capsulemeter-theme") updateTheme(event.newValue);
+    };
+
+    void listen<string>("capsulemeter-theme-changed", (event) => updateTheme(event.payload)).then((stop) => {
+      if (disposed) stop();
+      else unlisten = stop;
+    });
+    window.addEventListener("storage", handleStorage);
+    return () => {
+      disposed = true;
+      unlisten?.();
+      window.removeEventListener("storage", handleStorage);
+    };
+  }, []);
 
   useEffect(() => {
     let disposed = false;
@@ -586,7 +678,13 @@ export function UsageStatisticsPage() {
                 </div>
               )}
               <div className="statistics-chart-panel">
-                <TrendChart data={quotaChartData} mode="quota" color="#8758F5" emptyMessage={historyLoading ? "正在加载历史记录…" : historyError ? "历史数据加载失败" : "暂无历史记录"} />
+                <TrendChart
+                  data={quotaChartData}
+                  mode="quota"
+                  color="#8758F5"
+                  zoomResetKey={`${quotaPeriod}:${range}:${customRange.start}:${customRange.end}`}
+                  emptyMessage={historyLoading ? "正在加载历史记录…" : historyError ? "历史数据加载失败" : "暂无历史记录"}
+                />
               </div>
               <div className="statistics-history">
                 <div className="statistics-history__heading"><h3>历史记录</h3></div>
@@ -646,7 +744,14 @@ export function UsageStatisticsPage() {
                 </div>
               )}
               <div className="statistics-chart-panel">
-                <TrendChart data={tokenChartData} mode="tokens" color="#2584D8" hidden={!showTokenTotal} emptyMessage={historyLoading || statistics.tokenFetchPending ? "正在读取 Token 历史…" : historyError ? "历史数据加载失败" : "暂无历史记录"} />
+                <TrendChart
+                  data={tokenChartData}
+                  mode="tokens"
+                  color="#2584D8"
+                  zoomResetKey={`tokens:${range}:${customRange.start}:${customRange.end}`}
+                  hidden={!showTokenTotal}
+                  emptyMessage={historyLoading || statistics.tokenFetchPending ? "正在读取 Token 历史…" : historyError ? "历史数据加载失败" : "暂无历史记录"}
+                />
               </div>
               {statistics.tokenError && (
                 <div className="statistics-error" role="alert"><span>Token 历史读取失败：{statistics.tokenError}</span><button type="button" onClick={refreshTokens}>重试</button></div>
