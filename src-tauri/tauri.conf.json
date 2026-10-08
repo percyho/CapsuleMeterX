@@ -1,0 +1,76 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "CapsuleMeterX",
+  "version": "0.1.0",
+  "identifier": "com.capsulemeterx.desktop",
+  "build": {
+    "beforeDevCommand": "pnpm dev",
+    "devUrl": "http://127.0.0.1:1420",
+    "beforeBuildCommand": "pnpm build",
+    "frontendDist": "../dist"
+  },
+  "app": {
+    "withGlobalTauri": false,
+    "windows": [
+      {
+        "label": "capsule",
+        "title": "CapsuleMeterX",
+        "width": 120,
+        "height": 32,
+        "minWidth": 64,
+        "maxWidth": 280,
+        "minHeight": 32,
+        "maxHeight": 32,
+        "center": false,
+        "visible": false,
+        "focus": false,
+        "focusable": false,
+        "alwaysOnTop": true,
+        "skipTaskbar": true,
+        "decorations": false,
+        "resizable": false,
+        "maximizable": false,
+        "minimizable": false,
+        "closable": false,
+        "transparent": true,
+        "shadow": false
+      },
+      {
+        "label": "tooltip",
+        "title": "Usage details",
+        "width": 380,
+        "height": 160,
+        "minWidth": 220,
+        "maxWidth": 380,
+        "minHeight": 80,
+        "center": false,
+        "visible": false,
+        "focus": false,
+        "focusable": true,
+        "alwaysOnTop": true,
+        "skipTaskbar": true,
+        "decorations": false,
+        "resizable": false,
+        "maximizable": false,
+        "minimizable": false,
+        "closable": false,
+        "transparent": true,
+        "shadow": false
+      }
+    ],
+    "security": {
+      "capabilities": ["default"]
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": "all",
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.icns",
+      "icons/icon.ico"
+    ]
+  }
+}
