@@ -537,7 +537,13 @@ export function UsageTooltipWindow() {
               title={theme === "dark" ? text.switchToLight : text.switchToDark}
               onClick={toggleTheme}
             >
-              {theme === "dark" ? <SunIcon /> : <MoonIcon />}
+              <span
+                className={`usage-tooltip__theme-icon-stack${theme === "light" ? " usage-tooltip__theme-icon-stack--light" : ""}`}
+                aria-hidden="true"
+              >
+                <span className="usage-tooltip__theme-icon usage-tooltip__theme-icon--sun"><SunIcon /></span>
+                <span className="usage-tooltip__theme-icon usage-tooltip__theme-icon--moon"><MoonIcon /></span>
+              </span>
             </button>
           </div>
         </header>

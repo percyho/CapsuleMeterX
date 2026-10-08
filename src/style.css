@@ -333,6 +333,47 @@ body {
   height: 17px;
 }
 
+.usage-tooltip__theme-icon-stack {
+  position: relative;
+  display: block;
+  width: 18px;
+  height: 18px;
+  view-transition-name: theme-toggle-icon;
+}
+
+.usage-tooltip__theme-icon {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  transform-origin: center;
+  transition:
+    opacity 220ms ease,
+    transform 260ms cubic-bezier(0.2, 0.75, 0.25, 1),
+    filter 220ms ease;
+}
+
+.usage-tooltip__theme-icon--sun {
+  opacity: 1;
+  transform: rotate(0) scale(1);
+}
+
+.usage-tooltip__theme-icon--moon {
+  opacity: 0;
+  transform: rotate(-70deg) scale(0.35);
+}
+
+.usage-tooltip__theme-icon-stack--light .usage-tooltip__theme-icon--sun {
+  opacity: 0;
+  filter: blur(0.7px);
+  transform: rotate(125deg) scale(0.18);
+}
+
+.usage-tooltip__theme-icon-stack--light .usage-tooltip__theme-icon--moon {
+  opacity: 1;
+  transform: rotate(0) scale(1);
+}
+
 .usage-tooltip--tray-preview .usage-tooltip__title {
   font-size: 16px;
   line-height: 20px;
@@ -881,6 +922,18 @@ body {
     animation: theme-reveal 480ms cubic-bezier(0.22, 0.75, 0.25, 1) both;
   }
 
+  :root::view-transition-group(theme-toggle-icon) {
+    z-index: 3;
+  }
+
+  :root::view-transition-old(theme-toggle-icon) {
+    animation: theme-icon-out 220ms ease-in both;
+  }
+
+  :root::view-transition-new(theme-toggle-icon) {
+    animation: theme-icon-in 320ms cubic-bezier(0.2, 0.75, 0.25, 1) both;
+  }
+
   :root[data-theme="light"]::view-transition-new(root) {
     --theme-reveal-origin: 100% 0%;
   }
@@ -892,6 +945,17 @@ body {
   @keyframes theme-reveal {
     from { clip-path: circle(0 at var(--theme-reveal-origin)); }
     to { clip-path: circle(150vmax at var(--theme-reveal-origin)); }
+  }
+
+  @keyframes theme-icon-out {
+    from { opacity: 1; filter: blur(0); transform: rotate(0) scale(1); }
+    to { opacity: 0; filter: blur(0.7px); transform: rotate(105deg) scale(0.28); }
+  }
+
+  @keyframes theme-icon-in {
+    from { opacity: 0; filter: blur(0.7px); transform: rotate(-70deg) scale(0.28); }
+    65% { opacity: 1; filter: blur(0); transform: rotate(8deg) scale(1.12); }
+    to { opacity: 1; filter: blur(0); transform: rotate(0) scale(1); }
   }
 }
 
@@ -905,6 +969,11 @@ body {
   }
 
   :root::view-transition-new(root) {
+    animation-duration: 0.01ms !important;
+  }
+
+  :root::view-transition-old(theme-toggle-icon),
+  :root::view-transition-new(theme-toggle-icon) {
     animation-duration: 0.01ms !important;
   }
 }
