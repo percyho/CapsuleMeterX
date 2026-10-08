@@ -4,6 +4,7 @@ import { isTauri } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { FloatingUsageCapsule } from "./ui/FloatingUsageCapsule";
 import { UsageTooltipWindow } from "./ui/UsageTooltip";
+import { UsageStatisticsPage } from "./ui/UsageStatistics";
 import "./style.css";
 
 const windowLabel = isTauri() ? getCurrentWindow().label : "capsule";
@@ -15,6 +16,10 @@ if (!root) {
 
 createRoot(root).render(
   <React.StrictMode>
-    {windowLabel === "tooltip" ? <UsageTooltipWindow /> : <FloatingUsageCapsule />}
+    {windowLabel === "statistics"
+      ? <UsageStatisticsPage />
+      : windowLabel === "tooltip"
+        ? <UsageTooltipWindow />
+        : <FloatingUsageCapsule />}
   </React.StrictMode>,
 );

@@ -9,14 +9,15 @@ use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::mpsc::{self, Receiver, RecvTimeoutError, Sender};
 use std::sync::{Arc, Mutex};
 use std::thread;
-use std::time::{Duration, Instant};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use tauri::image::Image;
-use tauri::menu::{IconMenuItem, Menu};
+use tauri::menu::{IconMenuItem, Menu, MenuItem};
 use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
 use tauri::{AppHandle, Emitter, LogicalSize, Manager, PhysicalPosition, Rect, State, WindowEvent};
 
 const CAPSULE_LABEL: &str = "capsule";
 const TOOLTIP_LABEL: &str = "tooltip";
+const STATISTICS_LABEL: &str = "statistics";
 const TRAY_ID: &str = "capsulemeterx-tray";
 const ICON_SIZE: u32 = 32;
 const CAPSULE_WIDTH: f64 = 120.0;
@@ -88,6 +89,52 @@ struct SavedPosition {
     y: i32,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct QuotaHistorySample {
+    sampled_at: i64,
+    five_hour_remaining_percent: Option<u8>,
+    five_hour_resets_at: Option<i64>,
+    weekly_remaining_percent: Option<u8>,
+    weekly_resets_at: Option<i64>,
+    data_source: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+struct TokenDailyBucket {
+    start_date: String,
+    tokens: i64,
+    data_source: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+struct TokenUsageSummary {
+    lifetime_tokens: Option<i64>,
+    peak_daily_tokens: Option<i64>,
+    longest_running_turn_sec: Option<i64>,
+    current_streak_days: Option<i64>,
+    longest_streak_days: Option<i64>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+struct TokenUsageHistory {
+    summary: TokenUsageSummary,
+    daily_usage_buckets: Vec<TokenDailyBucket>,
+    updated_at: Option<i64>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+struct StatisticsData {
+    quota_samples: Vec<QuotaHistorySample>,
+    token_usage: TokenUsageHistory,
+    token_error: Option<String>,
+    token_fetch_pending: bool,
+}
+
 struct ConsumeResetCardRequest {
     credit_id: String,
     idempotency_key: String,
@@ -119,7 +166,9 @@ struct TrayAnchor {
 struct AppState {
     usage: Mutex<UsageSnapshot>,
     refresh_tx: Sender<()>,
+    token_refresh_tx: Sender<()>,
     consume_reset_tx: Sender<ConsumeResetCardRequest>,
+    statistics: Mutex<StatisticsData>,
     consuming_reset_cards: Arc<Mutex<HashSet<String>>>,
     tooltip_epoch: Arc<AtomicU64>,
     tray_anchor: Mutex<Option<TrayAnchor>>,
@@ -128,11 +177,17 @@ struct AppState {
 }
 
 impl AppState {
-    fn new(refresh_tx: Sender<()>, consume_reset_tx: Sender<ConsumeResetCardRequest>) -> Self {
+    fn new(
+        refresh_tx: Sender<()>,
+        token_refresh_tx: Sender<()>,
+        consume_reset_tx: Sender<ConsumeResetCardRequest>,
+    ) -> Self {
         Self {
             usage: Mutex::new(UsageSnapshot::default()),
             refresh_tx,
+            token_refresh_tx,
             consume_reset_tx,
+            statistics: Mutex::new(StatisticsData::default()),
             consuming_reset_cards: Arc::new(Mutex::new(HashSet::new())),
             tooltip_epoch: Arc::new(AtomicU64::new(0)),
             tray_anchor: Mutex::new(None),
@@ -149,6 +204,272 @@ fn get_usage_snapshot(state: State<'_, AppState>) -> UsageSnapshot {
         .lock()
         .map(|snapshot| snapshot.clone())
         .unwrap_or_default()
+}
+
+#[tauri::command]
+fn get_statistics_data(state: State<'_, AppState>) -> StatisticsData {
+    state
+        .statistics
+        .lock()
+        .map(|statistics| statistics.clone())
+        .unwrap_or_default()
+}
+
+#[tauri::command]
+fn show_statistics_window(app: AppHandle, state: State<'_, AppState>) -> Result<(), String> {
+    hide_tooltip_window(&app);
+    let window = app
+        .get_webview_window(STATISTICS_LABEL)
+        .ok_or_else(|| "Statistics window is unavailable".to_owned())?;
+    window.show().map_err(|error| error.to_string())?;
+    let _ = window.set_focus();
+    request_token_usage_refresh(&app, &state)
+}
+
+#[tauri::command]
+fn hide_statistics_window(app: AppHandle) {
+    if let Some(window) = app.get_webview_window(STATISTICS_LABEL) {
+        let _ = window.hide();
+    }
+}
+
+#[tauri::command]
+fn refresh_statistics_token_usage(
+    app: AppHandle,
+    state: State<'_, AppState>,
+) -> Result<(), String> {
+    request_token_usage_refresh(&app, &state)
+}
+
+#[tauri::command]
+fn save_statistics_csv(path: String, contents: String) -> Result<(), String> {
+    let path = PathBuf::from(path);
+    if path
+        .extension()
+        .and_then(|extension| extension.to_str())
+        .is_none_or(|extension| !extension.eq_ignore_ascii_case("csv"))
+    {
+        return Err("Please choose a .csv file".into());
+    }
+    fs::write(path, contents).map_err(|error| error.to_string())
+}
+
+fn request_token_usage_refresh(app: &AppHandle, state: &AppState) -> Result<(), String> {
+    if let Ok(mut statistics) = state.statistics.lock() {
+        statistics.token_fetch_pending = true;
+        statistics.token_error = None;
+    }
+    publish_statistics(app);
+    if let Err(error) = state.token_refresh_tx.send(()) {
+        set_token_fetch_error(app, format!("Codex App Server is unavailable: {error}"));
+        return Err(error.to_string());
+    }
+    Ok(())
+}
+
+fn statistics_file(app: &AppHandle, name: &str) -> Result<PathBuf, String> {
+    let directory = app
+        .path()
+        .app_data_dir()
+        .map_err(|error| error.to_string())?;
+    fs::create_dir_all(&directory).map_err(|error| error.to_string())?;
+    Ok(directory.join(name))
+}
+
+fn load_statistics(app: &AppHandle) -> StatisticsData {
+    let mut statistics = StatisticsData::default();
+    if let Ok(path) = statistics_file(app, "quota-history.jsonl") {
+        if let Ok(contents) = fs::read_to_string(path) {
+            statistics.quota_samples = contents
+                .lines()
+                .filter_map(|line| serde_json::from_str::<QuotaHistorySample>(line).ok())
+                .collect();
+            statistics
+                .quota_samples
+                .sort_by_key(|sample| sample.sampled_at);
+        }
+    }
+    if let Ok(path) = statistics_file(app, "token-usage.json") {
+        if let Ok(contents) = fs::read_to_string(path) {
+            if let Ok(history) = serde_json::from_str::<TokenUsageHistory>(&contents) {
+                statistics.token_usage = history;
+            }
+        }
+    }
+    statistics
+}
+
+fn publish_statistics(app: &AppHandle) {
+    let Some(state) = app.try_state::<AppState>() else {
+        return;
+    };
+    let Some(window) = app.get_webview_window(STATISTICS_LABEL) else {
+        return;
+    };
+    if !window.is_visible().unwrap_or(false) {
+        return;
+    }
+    let Ok(statistics) = state.statistics.lock() else {
+        return;
+    };
+    let _ = app.emit("statistics-updated", statistics.clone());
+}
+
+fn publish_quota_sample(app: &AppHandle, sample: QuotaHistorySample) {
+    let visible = app
+        .get_webview_window(STATISTICS_LABEL)
+        .and_then(|window| window.is_visible().ok())
+        .unwrap_or(false);
+    if visible {
+        let _ = app.emit("statistics-quota-sample", sample);
+    }
+}
+
+fn now_epoch_millis() -> i64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|duration| duration.as_millis().min(i64::MAX as u128) as i64)
+        .unwrap_or_default()
+}
+
+fn record_quota_sample(app: &AppHandle, snapshot: &UsageSnapshot) {
+    if snapshot.five_hour.is_none() && snapshot.weekly.is_none() {
+        return;
+    }
+    let sample = QuotaHistorySample {
+        sampled_at: now_epoch_millis(),
+        five_hour_remaining_percent: snapshot
+            .five_hour
+            .as_ref()
+            .map(|window| window.remaining_percent),
+        five_hour_resets_at: snapshot
+            .five_hour
+            .as_ref()
+            .and_then(|window| window.resets_at),
+        weekly_remaining_percent: snapshot
+            .weekly
+            .as_ref()
+            .map(|window| window.remaining_percent),
+        weekly_resets_at: snapshot.weekly.as_ref().and_then(|window| window.resets_at),
+        data_source: "codex-app-server/account/rateLimits/read".into(),
+    };
+    let Some(state) = app.try_state::<AppState>() else {
+        return;
+    };
+    let Ok(mut statistics) = state.statistics.lock() else {
+        return;
+    };
+    if statistics
+        .quota_samples
+        .binary_search_by_key(&sample.sampled_at, |existing| existing.sampled_at)
+        .is_ok()
+    {
+        return;
+    }
+    let Ok(path) = statistics_file(app, "quota-history.jsonl") else {
+        eprintln!("Could not resolve the quota history path");
+        return;
+    };
+    let Ok(mut file) = fs::OpenOptions::new().create(true).append(true).open(path) else {
+        eprintln!("Could not open the quota history file");
+        return;
+    };
+    if serde_json::to_writer(&mut file, &sample).is_err() || writeln!(file).is_err() {
+        eprintln!("Could not persist the quota history sample");
+        return;
+    }
+    statistics.quota_samples.push(sample.clone());
+    statistics
+        .quota_samples
+        .sort_by_key(|entry| entry.sampled_at);
+    drop(statistics);
+    publish_quota_sample(app, sample);
+}
+
+fn set_token_fetch_error(app: &AppHandle, error: String) {
+    if let Some(state) = app.try_state::<AppState>() {
+        if let Ok(mut statistics) = state.statistics.lock() {
+            statistics.token_fetch_pending = false;
+            statistics.token_error = Some(error);
+        }
+    }
+    publish_statistics(app);
+}
+
+fn save_token_usage(app: &AppHandle, history: &TokenUsageHistory) {
+    let Ok(path) = statistics_file(app, "token-usage.json") else {
+        set_token_fetch_error(app, "Could not resolve the Token history path".into());
+        return;
+    };
+    let Ok(contents) = serde_json::to_vec_pretty(history) else {
+        set_token_fetch_error(app, "Could not serialize Token history".into());
+        return;
+    };
+    if let Err(error) = fs::write(path, contents) {
+        set_token_fetch_error(app, format!("Could not save Token history: {error}"));
+    }
+}
+
+fn update_token_usage(app: &AppHandle, result: &Value) {
+    let Some(state) = app.try_state::<AppState>() else {
+        return;
+    };
+    let Ok(mut statistics) = state.statistics.lock() else {
+        return;
+    };
+    let summary = result.get("summary").unwrap_or(&Value::Null);
+    let current = &mut statistics.token_usage.summary;
+    if let Some(value) = summary.get("lifetimeTokens").and_then(Value::as_i64) {
+        current.lifetime_tokens = Some(value);
+    }
+    if let Some(value) = summary.get("peakDailyTokens").and_then(Value::as_i64) {
+        current.peak_daily_tokens = Some(value);
+    }
+    if let Some(value) = summary.get("longestRunningTurnSec").and_then(Value::as_i64) {
+        current.longest_running_turn_sec = Some(value);
+    }
+    if let Some(value) = summary.get("currentStreakDays").and_then(Value::as_i64) {
+        current.current_streak_days = Some(value);
+    }
+    if let Some(value) = summary.get("longestStreakDays").and_then(Value::as_i64) {
+        current.longest_streak_days = Some(value);
+    }
+    if let Some(buckets) = result.get("dailyUsageBuckets").and_then(Value::as_array) {
+        for bucket in buckets {
+            let Some(start_date) = bucket.get("startDate").and_then(Value::as_str) else {
+                continue;
+            };
+            let Some(tokens) = bucket.get("tokens").and_then(Value::as_i64) else {
+                continue;
+            };
+            let daily = TokenDailyBucket {
+                start_date: start_date.to_owned(),
+                tokens,
+                data_source: "codex-app-server/account/usage/read".into(),
+            };
+            if let Some(existing) = statistics
+                .token_usage
+                .daily_usage_buckets
+                .iter_mut()
+                .find(|existing| existing.start_date == daily.start_date)
+            {
+                *existing = daily;
+            } else {
+                statistics.token_usage.daily_usage_buckets.push(daily);
+            }
+        }
+        statistics
+            .token_usage
+            .daily_usage_buckets
+            .sort_by(|left, right| left.start_date.cmp(&right.start_date));
+    }
+    statistics.token_usage.updated_at = Some(now_epoch_millis());
+    statistics.token_error = None;
+    statistics.token_fetch_pending = false;
+    let history = statistics.token_usage.clone();
+    drop(statistics);
+    save_token_usage(app, &history);
+    publish_statistics(app);
 }
 
 #[tauri::command]
@@ -1225,6 +1546,18 @@ fn read_rate_limits(
     Ok(())
 }
 
+fn read_token_usage(
+    writer: &mut BufWriter<ChildStdin>,
+    next_id: &mut u64,
+    pending_id: &mut Option<u64>,
+) -> Result<(), String> {
+    let id = *next_id;
+    *next_id += 1;
+    send_rpc(writer, id, "account/usage/read", json!({}))?;
+    *pending_id = Some(id);
+    Ok(())
+}
+
 fn terminate_child(child: &Arc<Mutex<Child>>) {
     if let Ok(mut child) = child.lock() {
         if child.try_wait().ok().flatten().is_none() {
@@ -1237,6 +1570,7 @@ fn terminate_child(child: &Arc<Mutex<Child>>) {
 fn connect_app_server(
     app: &AppHandle,
     refresh: &Receiver<()>,
+    token_refresh: &Receiver<()>,
     consume_reset: &Receiver<ConsumeResetCardRequest>,
 ) -> Result<(), String> {
     let mut spawned: Child = codex_command()
@@ -1291,7 +1625,8 @@ fn connect_app_server(
         if let Some(plan_name) = plan_name_from_account(&account) {
             snapshot.plan_name = plan_name;
         }
-        publish_usage(app, snapshot);
+        publish_usage(app, snapshot.clone());
+        record_quota_sample(app, &snapshot);
 
         let mut next_id = 4_u64;
         let mut pending_config = Some(next_id);
@@ -1299,6 +1634,7 @@ fn connect_app_server(
         next_id += 1;
         let mut config_read_supported = true;
         let mut pending_usage = None;
+        let mut pending_token_usage = None;
         let mut pending_reset_consumptions: HashMap<
             u64,
             (Sender<Result<String, String>>, ActiveResetCardGuard),
@@ -1328,6 +1664,14 @@ fn connect_app_server(
                 if pending_usage.is_none() {
                     read_rate_limits(&mut writer, &mut next_id, &mut pending_usage)?;
                 }
+            }
+
+            let mut should_read_token_usage = false;
+            while token_refresh.try_recv().is_ok() {
+                should_read_token_usage = true;
+            }
+            if should_read_token_usage && pending_token_usage.is_none() {
+                read_token_usage(&mut writer, &mut next_id, &mut pending_token_usage)?;
             }
 
             match messages.recv_timeout(Duration::from_millis(250)) {
@@ -1398,9 +1742,29 @@ fn connect_app_server(
                             let current = current_snapshot(app);
                             let mut snapshot = parse_rate_limits(result, &current.plan_name);
                             snapshot.fast_mode_enabled = current.fast_mode_enabled;
-                            publish_usage(app, snapshot);
+                            publish_usage(app, snapshot.clone());
+                            record_quota_sample(app, &snapshot);
                         } else if let Some(error) = message.get("error") {
                             eprintln!("Codex rate limit read failed: {error}");
+                        }
+                    } else if pending_token_usage == Some(id) {
+                        pending_token_usage = None;
+                        if let Some(result) = message.get("result") {
+                            update_token_usage(app, result);
+                        } else if let Some(error) = message.get("error") {
+                            set_token_fetch_error(
+                                app,
+                                error
+                                    .get("message")
+                                    .and_then(Value::as_str)
+                                    .unwrap_or("Codex could not read account Token usage")
+                                    .to_owned(),
+                            );
+                        } else {
+                            set_token_fetch_error(
+                                app,
+                                "Codex returned no Token usage response".into(),
+                            );
                         }
                     } else if pending_config == Some(id) {
                         pending_config = None;
@@ -1471,13 +1835,27 @@ fn connect_app_server(
 fn run_usage_worker(
     app: AppHandle,
     refresh: Receiver<()>,
+    token_refresh: Receiver<()>,
     consume_reset: Receiver<ConsumeResetCardRequest>,
 ) {
     loop {
-        match connect_app_server(&app, &refresh, &consume_reset) {
+        match connect_app_server(&app, &refresh, &token_refresh, &consume_reset) {
             Ok(()) => {}
             Err(error) => {
                 eprintln!("CapsuleMeterX App Server connection: {error}");
+                if app
+                    .try_state::<AppState>()
+                    .and_then(|state| {
+                        state
+                            .statistics
+                            .lock()
+                            .ok()
+                            .map(|stats| stats.token_fetch_pending)
+                    })
+                    .unwrap_or(false)
+                {
+                    set_token_fetch_error(&app, error.clone());
+                }
                 let mut snapshot = current_snapshot(&app);
                 snapshot.status = "offline".into();
                 publish_usage(&app, snapshot);
@@ -1508,7 +1886,8 @@ fn create_tray(app: &tauri::App) -> tauri::Result<()> {
         Some(exit_menu_icon()),
         None::<&str>,
     )?;
-    let menu = Menu::with_items(app, &[&refresh, &quit])?;
+    let statistics = MenuItem::with_id(app, "statistics", "使用统计", true, None::<&str>)?;
+    let menu = Menu::with_items(app, &[&refresh, &statistics, &quit])?;
 
     TrayIconBuilder::with_id(TRAY_ID)
         .icon(usage_icon(&UsageSnapshot::default()))
@@ -1521,6 +1900,16 @@ fn create_tray(app: &tauri::App) -> tauri::Result<()> {
                 }
             }
             "quit" => app.exit(0),
+            "statistics" => {
+                hide_tooltip_window(app);
+                if let Some(window) = app.get_webview_window(STATISTICS_LABEL) {
+                    let _ = window.show();
+                    let _ = window.set_focus();
+                }
+                if let Some(state) = app.try_state::<AppState>() {
+                    let _ = request_token_usage_refresh(app, &state);
+                }
+            }
             _ => {}
         })
         .on_tray_icon_event(|tray, event| {
@@ -1576,12 +1965,23 @@ fn create_tray(app: &tauri::App) -> tauri::Result<()> {
 
 pub fn run() {
     let (refresh_tx, refresh_rx) = mpsc::channel();
+    let (token_refresh_tx, token_refresh_rx) = mpsc::channel();
     let (consume_reset_tx, consume_reset_rx) = mpsc::channel();
 
     let app = tauri::Builder::default()
-        .manage(AppState::new(refresh_tx, consume_reset_tx))
+        .plugin(tauri_plugin_dialog::init())
+        .manage(AppState::new(
+            refresh_tx,
+            token_refresh_tx,
+            consume_reset_tx,
+        ))
         .invoke_handler(tauri::generate_handler![
             get_usage_snapshot,
+            get_statistics_data,
+            show_statistics_window,
+            hide_statistics_window,
+            refresh_statistics_token_usage,
+            save_statistics_csv,
             consume_reset_card,
             show_usage_tooltip,
             show_tray_usage_details,
@@ -1593,6 +1993,11 @@ pub fn run() {
         ])
         .setup(move |app| {
             create_tray(app)?;
+            if let Some(state) = app.try_state::<AppState>() {
+                if let Ok(mut statistics) = state.statistics.lock() {
+                    *statistics = load_statistics(app.handle());
+                }
+            }
 
             let app_handle = app.handle().clone();
             if let Some(capsule) = app.get_webview_window(CAPSULE_LABEL) {
@@ -1600,7 +2005,9 @@ pub fn run() {
                 capsule.show()?;
             }
 
-            thread::spawn(move || run_usage_worker(app_handle, refresh_rx, consume_reset_rx));
+            thread::spawn(move || {
+                run_usage_worker(app_handle, refresh_rx, token_refresh_rx, consume_reset_rx)
+            });
             Ok(())
         })
         .on_window_event(|window, event| {
@@ -1611,6 +2018,11 @@ pub fn run() {
                         start_drag_release_watcher(&app, &state.drag_watch_active);
                     }
                     save_capsule_position(&app, *position);
+                }
+            } else if window.label() == STATISTICS_LABEL {
+                if let WindowEvent::CloseRequested { api, .. } = event {
+                    api.prevent_close();
+                    let _ = window.hide();
                 }
             }
         })

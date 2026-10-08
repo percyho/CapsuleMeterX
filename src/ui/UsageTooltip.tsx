@@ -25,6 +25,7 @@ const TEXT = {
     switchToChinese: "切换到简体中文",
     switchToLight: "切换到明亮主题",
     switchToDark: "切换到暗黑主题",
+    statistics: "打开统计",
     offline: "无法连接 Codex App Server",
     fiveHour: "5 小时剩余",
     weekly: "本周剩余",
@@ -78,6 +79,7 @@ const TEXT = {
     switchToChinese: "Switch to Chinese",
     switchToLight: "Switch to light theme",
     switchToDark: "Switch to dark theme",
+    statistics: "Open statistics",
     offline: "Unable to connect to Codex App Server",
     fiveHour: "5-hour remaining",
     weekly: "Weekly remaining",
@@ -204,6 +206,14 @@ function LanguagesIcon() {
   return (
     <svg className="usage-tooltip__toolbar-icon" viewBox="0 0 24 24" fill="none" aria-hidden="true">
       <path d="M3.5 5h9M8 3v2m4.5 0c0 4.2-3 7.6-7.5 9.4M5.5 8c1.3 2.8 3.8 5.1 6.4 6.4M13.5 20l4-10 4 10m-6.5-3h5" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
+function StatisticsIcon() {
+  return (
+    <svg className="usage-tooltip__toolbar-icon" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <path d="M3 3v18h18M8 17v-3m5 3V5m5 12V9" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
     </svg>
   );
 }
@@ -521,6 +531,17 @@ export function UsageTooltipWindow() {
             {viewMode === "tray-preview" ? "CapsuleMeterX" : usage.planName || "ChatGPT"}
           </h1>
           <div className="usage-tooltip__toolbar">
+            <button
+              className="usage-tooltip__toolbar-button"
+              type="button"
+              aria-label={text.statistics}
+              title={text.statistics}
+              onClick={() => {
+                if (isTauri()) void invoke("show_statistics_window");
+              }}
+            >
+              <StatisticsIcon />
+            </button>
             <button
               className="usage-tooltip__toolbar-button"
               type="button"

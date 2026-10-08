@@ -56,6 +56,26 @@
         "closable": false,
         "transparent": true,
         "shadow": false
+      },
+      {
+        "label": "statistics",
+        "title": "CapsuleMeterX Statistics",
+        "width": 600,
+        "height": 666,
+        "minWidth": 560,
+        "minHeight": 600,
+        "center": true,
+        "visible": false,
+        "focus": false,
+        "alwaysOnTop": false,
+        "skipTaskbar": false,
+        "decorations": false,
+        "resizable": true,
+        "maximizable": true,
+        "minimizable": true,
+        "closable": true,
+        "transparent": true,
+        "shadow": true
       }
     ],
     "security": {

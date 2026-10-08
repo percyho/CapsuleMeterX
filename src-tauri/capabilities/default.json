@@ -1,11 +1,12 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
-  "description": "Capsule and tooltip windows for the local usage utility",
-  "windows": ["capsule", "tooltip"],
+  "description": "Capsule, tooltip, and statistics windows for the local usage utility",
+  "windows": ["capsule", "tooltip", "statistics"],
   "permissions": [
     "core:default",
     "core:event:default",
-    "core:window:allow-start-dragging"
+    "core:window:allow-start-dragging",
+    "dialog:allow-save"
   ]
 }
