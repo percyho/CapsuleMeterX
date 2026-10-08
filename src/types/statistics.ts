@@ -10,12 +10,16 @@ export interface QuotaHistorySample {
 export interface TokenDailyBucket {
   startDate: string;
   tokens: number;
+  inputTokens: number | null;
+  outputTokens: number | null;
   dataSource: string;
 }
 
 export interface TokenUsageHistory {
   summary: {
     lifetimeTokens: number | null;
+    inputTokens: number | null;
+    outputTokens: number | null;
     peakDailyTokens: number | null;
     longestRunningTurnSec: number | null;
     currentStreakDays: number | null;
@@ -37,6 +41,8 @@ export const EMPTY_STATISTICS: StatisticsData = {
   tokenUsage: {
     summary: {
       lifetimeTokens: null,
+      inputTokens: null,
+      outputTokens: null,
       peakDailyTokens: null,
       longestRunningTurnSec: null,
       currentStreakDays: null,

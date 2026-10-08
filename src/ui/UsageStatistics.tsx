@@ -189,7 +189,7 @@ function SummaryCard({
   const percent = value === null ? 0 : clamp(value, 0, 100);
   return (
     <article className={`statistics-summary statistics-summary--${kind}`}>
-      <span className="statistics-summary__icon">{icon}</span>
+      <span className="statistics-summary__icon" title={`${title}图标`}>{icon}</span>
       <div className="statistics-summary__copy">
         <span>{title}</span>
         <small>{description}</small>
@@ -622,7 +622,7 @@ export function UsageStatisticsPage() {
           }}
         >
           <div className="statistics-header__identity">
-            <span className="statistics-header__icon"><StatisticsIcon /></span>
+            <span className="statistics-header__icon" title="统计面板"><StatisticsIcon /></span>
             <div>
               <h1>统计</h1>
               <p className="statistics-header__subtitle">查看您的使用情况和历史记录</p>
@@ -632,8 +632,8 @@ export function UsageStatisticsPage() {
         </header>
 
         <nav className="statistics-tabs" aria-label="统计类型">
-          <button className={tab === "quota" ? "is-active" : ""} type="button" onClick={() => setTab("quota")}><ClockIcon />额度使用历史</button>
-          <button className={tab === "tokens" ? "is-active" : ""} type="button" onClick={() => setTab("tokens")}><TokenCubeIcon />Token 使用历史</button>
+          <button className={tab === "quota" ? "is-active" : ""} type="button" title="查看 5 小时和每周额度历史" onClick={() => setTab("quota")}><ClockIcon />额度使用历史</button>
+          <button className={tab === "tokens" ? "is-active" : ""} type="button" title="查看每日 Token 使用量" onClick={() => setTab("tokens")}><TokenCubeIcon />Token 使用历史</button>
         </nav>
 
         {tab === "quota" ? (
@@ -645,13 +645,13 @@ export function UsageStatisticsPage() {
             <section className="statistics-detail-card">
               <div className="statistics-detail-heading">
                 <div className="statistics-detail-heading__title">
-                  <span className="statistics-detail-heading__icon"><ClockIcon /></span>
+                  <span className="statistics-detail-heading__icon" title="额度使用详情"><ClockIcon /></span>
                   <h2>额度使用详情</h2>
                 </div>
                 <div className="statistics-detail-heading__meta">
                   <span className="statistics-detail-metric"><i /><span>采样点数</span><strong>{formatNumber(summaryCount)}</strong></span>
-                  <span className="statistics-detail-metric"><CalendarIcon /><span>记录跨度</span><strong>{summarySpan}</strong></span>
-                  <button className="statistics-export" type="button" onClick={() => void exportCsv()}><DownloadIcon />下载 CSV</button>
+                  <span className="statistics-detail-metric" title="当前时间范围内的记录起止日期"><CalendarIcon /><span>记录跨度</span><strong>{summarySpan}</strong></span>
+                  <button className="statistics-export" type="button" title="导出当前额度历史为 CSV" onClick={() => void exportCsv()}><DownloadIcon />下载 CSV</button>
                 </div>
               </div>
               <div className="statistics-trend-heading">
@@ -707,20 +707,20 @@ export function UsageStatisticsPage() {
         ) : (
           <>
             <section className="statistics-summary-grid statistics-summary-grid--tokens" aria-label="Token 汇总">
-              <article className="statistics-token-summary"><span>累计 Token</span><strong>{formatNumber(statistics.tokenUsage.summary.lifetimeTokens)}</strong><small>Codex 账户汇总</small></article>
-              <article className="statistics-token-summary"><span>输入 Token</span><strong>—</strong><small>当前数据源未提供拆分</small></article>
-              <article className="statistics-token-summary"><span>输出 Token</span><strong>—</strong><small>当前数据源未提供拆分</small></article>
+              <article className="statistics-token-summary"><span>近 10 年 Token</span><strong>{formatNumber(statistics.tokenUsage.summary.lifetimeTokens)}</strong><small>每日账户用量合计</small></article>
+              <article className="statistics-token-summary"><span>输入 Token</span><strong>{formatNumber(statistics.tokenUsage.summary.inputTokens)}</strong><small>含缓存与非缓存文本</small></article>
+              <article className="statistics-token-summary"><span>输出 Token</span><strong>{formatNumber(statistics.tokenUsage.summary.outputTokens)}</strong><small>文本输出合计</small></article>
             </section>
             <section className="statistics-detail-card">
               <div className="statistics-detail-heading">
                 <div className="statistics-detail-heading__title">
-                  <span className="statistics-detail-heading__icon statistics-detail-heading__icon--token"><TokenCubeIcon /></span>
+                  <span className="statistics-detail-heading__icon statistics-detail-heading__icon--token" title="Token 使用详情"><TokenCubeIcon /></span>
                   <h2>Token 使用详情</h2>
                 </div>
                 <div className="statistics-detail-heading__meta">
                   <span className="statistics-detail-metric"><i /><span>有效记录数</span><strong>{formatNumber(summaryCount)}</strong></span>
-                  <span className="statistics-detail-metric"><CalendarIcon /><span>记录跨度</span><strong>{summarySpan}</strong></span>
-                  <button className="statistics-export" type="button" onClick={() => void exportCsv()}><DownloadIcon />下载 CSV</button>
+                  <span className="statistics-detail-metric" title="当前时间范围内的记录起止日期"><CalendarIcon /><span>记录跨度</span><strong>{summarySpan}</strong></span>
+                  <button className="statistics-export" type="button" title="导出当前 Token 历史为 CSV" onClick={() => void exportCsv()}><DownloadIcon />下载 CSV</button>
                 </div>
               </div>
               <div className="statistics-trend-heading">
@@ -733,7 +733,7 @@ export function UsageStatisticsPage() {
                     </button>
                   ))}
                 </div>
-                  <button className={`statistics-legend statistics-legend--button${showTokenTotal ? " is-visible" : ""}`} type="button" onClick={() => setShowTokenTotal((value) => !value)}><i />总 Token</button>
+                  <button className={`statistics-legend statistics-legend--button${showTokenTotal ? " is-visible" : ""}`} type="button" title={showTokenTotal ? "隐藏总 Token 曲线" : "显示总 Token 曲线"} onClick={() => setShowTokenTotal((value) => !value)}><i />总 Token</button>
                 </div>
               </div>
               {customOpen && (
@@ -757,7 +757,7 @@ export function UsageStatisticsPage() {
                 <div className="statistics-error" role="alert"><span>Token 历史读取失败：{statistics.tokenError}</span><button type="button" onClick={refreshTokens}>重试</button></div>
               )}
               {!statistics.tokenError && statistics.tokenFetchPending && <p className="statistics-inline-status">正在读取 Codex 账户 Token 汇总…</p>}
-              <p className="statistics-data-note">当前 App Server 仅提供账户每日 Token 总量及累计汇总，不含输入/输出拆分、模型、单次请求记录；图表和列表仅展示实际返回的每日总量。</p>
+              <p className="statistics-data-note">Token 历史直接从账户用量接口读取近 3650 天的数据，不依赖 Codex App Server；输入量包含缓存与非缓存文本，当前按日汇总，不展示模型分布或单次请求记录。</p>
               <div className="statistics-history">
                 <div className="statistics-history__heading"><h3>历史记录</h3></div>
                 {tokenRecords.length === 0 ? <EmptyHistory loading={historyLoading || (!historyError && statistics.tokenFetchPending)} error={historyError} onRetry={retryHistoryLoad} loadingText="正在读取 Token 历史…" /> : (
