@@ -19,6 +19,7 @@ export interface ResetCardExpiry {
 
 export interface UsageSnapshot {
   status: ConnectionStatus;
+  connectionError: string | null;
   planName: string;
   fiveHour: UsageWindow | null;
   weekly: UsageWindow | null;
@@ -32,6 +33,7 @@ export interface UsageSnapshot {
 
 export const EMPTY_USAGE: UsageSnapshot = {
   status: "loading",
+  connectionError: null,
   planName: "ChatGPT",
   fiveHour: null,
   weekly: null,

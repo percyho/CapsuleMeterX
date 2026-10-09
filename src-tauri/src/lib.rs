@@ -12,6 +12,7 @@ use std::thread;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use tauri::image::Image;
 use tauri::menu::{IconMenuItem, Menu, MenuItem};
+use tauri::path::BaseDirectory;
 use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
 use tauri::{AppHandle, Emitter, LogicalSize, Manager, PhysicalPosition, Rect, State, WindowEvent};
 
@@ -55,6 +56,7 @@ struct ResetCardExpiry {
 #[serde(rename_all = "camelCase")]
 struct UsageSnapshot {
     status: String,
+    connection_error: Option<String>,
     plan_name: String,
     five_hour: Option<UsageWindow>,
     weekly: Option<UsageWindow>,
@@ -70,6 +72,7 @@ impl Default for UsageSnapshot {
     fn default() -> Self {
         Self {
             status: "loading".into(),
+            connection_error: None,
             plan_name: "ChatGPT".into(),
             five_hour: None,
             weekly: None,
@@ -1204,11 +1207,72 @@ fn publish_usage(app: &AppHandle, snapshot: UsageSnapshot) {
     let _ = app.emit("usage-updated", snapshot);
 }
 
-fn codex_command() -> Command {
-    let executable = std::env::var_os("CODEX_CLI_PATH")
+fn codex_executable(app: &AppHandle) -> Option<PathBuf> {
+    std::env::var_os("CODEX_CLI_PATH")
         .map(PathBuf::from)
         .filter(|path| path.is_file())
         .or_else(|| {
+            let binary = if cfg!(windows) {
+                "codex/bin/codex.exe"
+            } else {
+                "codex/bin/codex"
+            };
+            app.path()
+                .resolve(binary, BaseDirectory::Resource)
+                .ok()
+                .filter(|path| path.is_file())
+        })
+        .or_else(|| {
+            #[cfg(windows)]
+            {
+                let native_package = if cfg!(target_arch = "aarch64") {
+                    "codex-win32-arm64"
+                } else {
+                    "codex-win32-x64"
+                };
+                let target = if cfg!(target_arch = "aarch64") {
+                    "aarch64-pc-windows-msvc"
+                } else {
+                    "x86_64-pc-windows-msvc"
+                };
+                let mut package_roots = Vec::new();
+                if let Some(app_data) = std::env::var_os("APPDATA") {
+                    package_roots.push(
+                        PathBuf::from(app_data)
+                            .join("npm")
+                            .join("node_modules")
+                            .join("@openai"),
+                    );
+                }
+                if let Some(path) = std::env::var_os("PATH") {
+                    for bin_dir in std::env::split_paths(&path) {
+                        let executable = bin_dir.join("codex.exe");
+                        if executable.is_file() {
+                            return Some(executable);
+                        }
+                        package_roots.push(bin_dir.join("node_modules").join("@openai"));
+                    }
+                }
+                for package_root in package_roots {
+                    let native_roots = [
+                        package_root.join(native_package),
+                        package_root
+                            .join("codex")
+                            .join("node_modules")
+                            .join("@openai")
+                            .join(native_package),
+                    ];
+                    for native_root in native_roots {
+                        let vendor = native_root.join("vendor").join(target);
+                        for relative in ["bin/codex.exe", "codex/codex.exe"] {
+                            let path = vendor.join(relative);
+                            if path.is_file() {
+                                return Some(path);
+                            }
+                        }
+                    }
+                }
+            }
             let local_app_data = std::env::var_os("LOCALAPPDATA")?;
             let path = PathBuf::from(local_app_data)
                 .join("Programs")
@@ -1218,11 +1282,65 @@ fn codex_command() -> Command {
                 .join("codex.exe");
             path.is_file().then_some(path)
         })
-        .unwrap_or_else(|| PathBuf::from("codex"));
+}
 
-    let mut command = Command::new(executable);
+#[cfg(windows)]
+fn codex_shim_directory() -> Option<PathBuf> {
+    let mut candidates = Vec::new();
+    if let Some(app_data) = std::env::var_os("APPDATA") {
+        candidates.push(PathBuf::from(app_data).join("npm"));
+    }
+    if let Some(path) = std::env::var_os("PATH") {
+        candidates.extend(std::env::split_paths(&path));
+    }
+    candidates.into_iter().find(|directory| {
+        directory.join("codex.cmd").is_file() || directory.join("codex.bat").is_file()
+    })
+}
+
+fn codex_command(app: &AppHandle) -> Command {
+    let mut command = if let Some(executable) = codex_executable(app) {
+        let mut command = Command::new(executable);
+        command.args(["app-server", "--listen", "stdio://"]);
+        command
+    } else {
+        #[cfg(windows)]
+        {
+            if let Some(shim_directory) = codex_shim_directory() {
+                let command_processor = std::env::var_os("COMSPEC")
+                    .map(PathBuf::from)
+                    .filter(|path| path.is_file())
+                    .unwrap_or_else(|| PathBuf::from("cmd.exe"));
+                let mut command = Command::new(command_processor);
+                command.args([
+                    "/D",
+                    "/S",
+                    "/C",
+                    "codex app-server --listen stdio://",
+                ]);
+                let mut search_paths = vec![shim_directory];
+                if let Some(path) = std::env::var_os("PATH") {
+                    search_paths.extend(std::env::split_paths(&path));
+                }
+                if let Ok(path) = std::env::join_paths(search_paths) {
+                    command.env("PATH", path);
+                }
+                command
+            } else {
+                let mut command = Command::new("codex");
+                command.args(["app-server", "--listen", "stdio://"]);
+                command
+            }
+        }
+        #[cfg(not(windows))]
+        {
+            let mut command = Command::new("codex");
+            command.args(["app-server", "--listen", "stdio://"]);
+            command
+        }
+    };
+
     command
-        .args(["app-server", "--listen", "stdio://"])
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::null());
@@ -1399,6 +1517,7 @@ fn parse_rate_limits(result: &Value, plan_name: &str) -> UsageSnapshot {
 
     UsageSnapshot {
         status: "online".into(),
+        connection_error: None,
         plan_name: plan_name.into(),
         five_hour,
         weekly,
@@ -1573,7 +1692,7 @@ fn connect_app_server(
     token_refresh: &Receiver<()>,
     consume_reset: &Receiver<ConsumeResetCardRequest>,
 ) -> Result<(), String> {
-    let mut spawned: Child = codex_command()
+    let mut spawned: Child = codex_command(app)
         .spawn()
         .map_err(|error| format!("Could not start Codex App Server: {error}"))?;
     let Some(stdin) = spawned.stdin.take() else {
@@ -1858,6 +1977,7 @@ fn run_usage_worker(
                 }
                 let mut snapshot = current_snapshot(&app);
                 snapshot.status = "offline".into();
+                snapshot.connection_error = Some(error.clone());
                 publish_usage(&app, snapshot);
             }
         }
