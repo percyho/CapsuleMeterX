@@ -153,8 +153,6 @@ export function FloatingUsageCapsule() {
           style={{ stroke: weeklyPaceColor }}
         />
       </svg>
-      <FastModeIndicator enabled={usage.fastModeEnabled} />
-
       {offline ? (
         <span className="capsule__offline">Offline</span>
       ) : usage.status === "loading" ? (
@@ -167,7 +165,7 @@ export function FloatingUsageCapsule() {
           <span className="capsule__value" style={{ color: usageColor(usage.fiveHour?.remainingPercent ?? null) }}>
             {usage.fiveHour ? `${usage.fiveHour.remainingPercent}%` : "--"}
           </span>
-          <span className="capsule__separator" aria-hidden="true">·</span>
+          <FastModeIndicator enabled={usage.fastModeEnabled} />
           <span className="capsule__label capsule__week-label">W</span>
           <span className="capsule__value" style={{ color: usageColor(usage.weekly?.remainingPercent ?? null) }}>
             {usage.weekly ? `${usage.weekly.remainingPercent}%` : "--"}
