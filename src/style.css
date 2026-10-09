@@ -867,6 +867,7 @@ body {
   margin: 0 0 5px;
   color: var(--usage-danger);
   font-size: 11px;
+  overflow-wrap: anywhere;
 }
 
 @keyframes reset-dialog-fade {

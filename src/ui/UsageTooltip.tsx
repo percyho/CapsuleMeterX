@@ -593,7 +593,9 @@ export function UsageTooltipWindow() {
               </span>
             </div>
             {usage.status === "offline" && (
-              <p className="tray-preview__offline">{text.offline}</p>
+              <p className="tray-preview__offline">
+                {usage.connectionError ? `${text.offline}: ${usage.connectionError}` : text.offline}
+              </p>
             )}
             <button
               className="tray-preview__details-button"
@@ -608,7 +610,9 @@ export function UsageTooltipWindow() {
         ) : (
           <>
             {usage.status === "offline" && (
-              <p className="usage-tooltip__offline">{text.offline}</p>
+              <p className="usage-tooltip__offline">
+                {usage.connectionError ? `${text.offline}: ${usage.connectionError}` : text.offline}
+              </p>
             )}
 
             <div className="usage-tooltip__periods">

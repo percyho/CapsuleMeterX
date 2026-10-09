@@ -1,0 +1,4 @@
+CapsuleMeterX bundles the Codex CLI runtime from OpenAI, version 0.155.1.
+The bundled Codex CLI is licensed under the Apache License, Version 2.0.
+Source: https://github.com/openai/codex/tree/rust-v0.155.1
+The accompanying LICENSE.txt contains the applicable license text.
