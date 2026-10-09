@@ -2,6 +2,14 @@
 
 ## [Unreleased]
 
+## [0.2.1] - 2026-10-09
+
+### Changed
+
+- Moved the fast-mode indicator between the five-hour and weekly usage values, and matched usage-ring percentages to the ring status color.
+- Clarified quota-history controls and refined CSV export button styling.
+- Set the Windows NSIS installer and uninstaller icons to the CapsuleMeterX logo.
+
 ## [0.2.0] - 2026-10-08
 
 ### Added
