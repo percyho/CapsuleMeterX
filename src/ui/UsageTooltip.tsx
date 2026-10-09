@@ -180,7 +180,14 @@ function UsageRing({ window, label }: { window: UsageWindow | null; label: strin
         strokeDashoffset={circumference * (1 - progress / 100)}
         style={{ stroke: usageColor(remaining) }}
       />
-      <text className="usage-ring__label" x="27" y="27" textAnchor="middle" dominantBaseline="central">
+      <text
+        className="usage-ring__label"
+        x="27"
+        y="27"
+        textAnchor="middle"
+        dominantBaseline="central"
+        style={{ fill: usageColor(remaining) }}
+      >
         {remaining === null ? "--" : `${remaining}%`}
       </text>
     </svg>

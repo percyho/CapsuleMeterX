@@ -651,22 +651,31 @@ export function UsageStatisticsPage() {
                 <div className="statistics-detail-heading__meta">
                   <span className="statistics-detail-metric"><i /><span>采样点数</span><strong>{formatNumber(summaryCount)}</strong></span>
                   <span className="statistics-detail-metric"><CalendarIcon /><span>记录跨度</span><strong>{summarySpan}</strong></span>
-                  <button className="statistics-export" type="button" onClick={() => void exportCsv()}><DownloadIcon />下载 CSV</button>
+                  <button className="statistics-export" type="button" title="将当前记录导出为 CSV" aria-label="将当前记录导出为 CSV" onClick={() => void exportCsv()}>
+                    <span className="statistics-export__icon"><DownloadIcon /></span>
+                    <span>导出 CSV</span>
+                  </button>
                 </div>
               </div>
               <div className="statistics-trend-heading">
                 <h3>历史趋势</h3>
-                <div className="statistics-control-row">
-                  <div className="statistics-segmented" aria-label="额度类型">
-                    <button type="button" className={quotaPeriod === "fiveHour" ? "is-active" : ""} onClick={() => setQuotaPeriod("fiveHour")}>5 小时</button>
-                    <button type="button" className={quotaPeriod === "weekly" ? "is-active" : ""} onClick={() => setQuotaPeriod("weekly")}>本周</button>
+                <div className="statistics-control-row statistics-control-row--quota">
+                  <div className="statistics-control-group">
+                    <span className="statistics-control-group__label">额度类型</span>
+                    <div className="statistics-segmented" role="group" aria-label="额度类型">
+                      <button type="button" className={quotaPeriod === "fiveHour" ? "is-active" : ""} onClick={() => setQuotaPeriod("fiveHour")}>5 小时</button>
+                      <button type="button" className={quotaPeriod === "weekly" ? "is-active" : ""} onClick={() => setQuotaPeriod("weekly")}>本周</button>
+                    </div>
                   </div>
-                  <div className="statistics-segmented statistics-segmented--range" aria-label="时间范围">
-                    {([7, 30, 90, "custom"] as RangePreset[]).map((preset) => (
-                      <button key={preset} type="button" className={range === preset ? "is-active" : ""} onClick={() => selectRange(preset)}>
-                        {preset === "custom" ? "自定义" : `${preset} 天`}
-                      </button>
-                    ))}
+                  <div className="statistics-control-group">
+                    <span className="statistics-control-group__label">查看范围</span>
+                    <div className="statistics-segmented statistics-segmented--range" role="group" aria-label="历史范围">
+                      {([7, 30, 90, "custom"] as RangePreset[]).map((preset) => (
+                        <button key={preset} type="button" className={range === preset ? "is-active" : ""} onClick={() => selectRange(preset)}>
+                          {preset === "custom" ? "自定义" : `${preset} 天`}
+                        </button>
+                      ))}
+                    </div>
                   </div>
                 </div>
               </div>
@@ -720,7 +729,10 @@ export function UsageStatisticsPage() {
                 <div className="statistics-detail-heading__meta">
                   <span className="statistics-detail-metric"><i /><span>有效记录数</span><strong>{formatNumber(summaryCount)}</strong></span>
                   <span className="statistics-detail-metric"><CalendarIcon /><span>记录跨度</span><strong>{summarySpan}</strong></span>
-                  <button className="statistics-export" type="button" onClick={() => void exportCsv()}><DownloadIcon />下载 CSV</button>
+                  <button className="statistics-export" type="button" title="将当前记录导出为 CSV" aria-label="将当前记录导出为 CSV" onClick={() => void exportCsv()}>
+                    <span className="statistics-export__icon"><DownloadIcon /></span>
+                    <span>导出 CSV</span>
+                  </button>
                 </div>
               </div>
               <div className="statistics-trend-heading">
