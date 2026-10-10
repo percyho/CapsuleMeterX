@@ -93,10 +93,49 @@ struct SavedPosition {
     y: i32,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
-#[serde(rename_all = "camelCase")]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
 struct StartupSettings {
     start_with_windows: bool,
+    capsule_opacity_percent: u8,
+    capsule_always_on_top: bool,
+    refresh_interval_minutes: u8,
+    low_balance_alert_enabled: bool,
+    low_balance_threshold_percent: u8,
+    usage_pace_alert_enabled: bool,
+    usage_pace_alert_threshold: String,
+}
+
+impl Default for StartupSettings {
+    fn default() -> Self {
+        Self {
+            start_with_windows: false,
+            capsule_opacity_percent: 100,
+            capsule_always_on_top: true,
+            refresh_interval_minutes: 2,
+            low_balance_alert_enabled: false,
+            low_balance_threshold_percent: 20,
+            usage_pace_alert_enabled: false,
+            usage_pace_alert_threshold: "very-fast".into(),
+        }
+    }
+}
+
+impl StartupSettings {
+    fn normalized(mut self) -> Self {
+        self.capsule_opacity_percent = self.capsule_opacity_percent.clamp(40, 100);
+        self.refresh_interval_minutes = match self.refresh_interval_minutes {
+            1 | 2 | 5 | 10 => self.refresh_interval_minutes,
+            _ => 2,
+        };
+        self.low_balance_threshold_percent = self.low_balance_threshold_percent.clamp(5, 50);
+        if self.usage_pace_alert_threshold != "fast"
+            && self.usage_pace_alert_threshold != "very-fast"
+        {
+            self.usage_pace_alert_threshold = "very-fast".into();
+        }
+        self
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -242,17 +281,36 @@ fn set_startup_settings(
     state: State<'_, AppState>,
     settings: StartupSettings,
 ) -> Result<StartupSettings, String> {
-    let autostart = app.autolaunch();
-    if settings.start_with_windows {
-        autostart.enable().map_err(|error| error.to_string())?;
-    } else {
-        autostart.disable().map_err(|error| error.to_string())?;
+    let settings = settings.normalized();
+    let previous = state
+        .startup_settings
+        .lock()
+        .map(|settings| settings.clone())
+        .unwrap_or_default();
+
+    if previous.start_with_windows != settings.start_with_windows {
+        let autostart = app.autolaunch();
+        if settings.start_with_windows {
+            autostart.enable().map_err(|error| error.to_string())?;
+        } else {
+            autostart.disable().map_err(|error| error.to_string())?;
+        }
+    }
+
+    if let Some(capsule) = app.get_webview_window(CAPSULE_LABEL) {
+        capsule
+            .set_always_on_top(settings.capsule_always_on_top)
+            .map_err(|error| error.to_string())?;
     }
 
     save_startup_settings(&app, &settings)?;
     if let Ok(mut current) = state.startup_settings.lock() {
         *current = settings.clone();
     }
+    if previous.refresh_interval_minutes != settings.refresh_interval_minutes {
+        let _ = state.refresh_tx.send(());
+    }
+    let _ = app.emit("app-settings-updated", settings.clone());
 
     Ok(settings)
 }
@@ -326,8 +384,19 @@ fn load_startup_settings(app: &AppHandle) -> StartupSettings {
     startup_settings_file(app)
         .ok()
         .and_then(|path| fs::read_to_string(path).ok())
-        .and_then(|contents| serde_json::from_str(&contents).ok())
+        .and_then(|contents| serde_json::from_str::<StartupSettings>(&contents).ok())
         .unwrap_or_default()
+        .normalized()
+}
+
+fn configured_poll_interval(app: &AppHandle) -> Duration {
+    app.try_state::<AppState>()
+        .and_then(|state| {
+            state.startup_settings.lock().ok().map(|settings| {
+                Duration::from_secs(u64::from(settings.refresh_interval_minutes) * 60)
+            })
+        })
+        .unwrap_or(POLL_INTERVAL)
 }
 
 fn save_startup_settings(app: &AppHandle, settings: &StartupSettings) -> Result<(), String> {
@@ -1957,7 +2026,9 @@ fn connect_app_server(
                     }
                 }
                 Err(RecvTimeoutError::Timeout) => {
-                    if pending_usage.is_none() && last_poll.elapsed() >= POLL_INTERVAL {
+                    if pending_usage.is_none()
+                        && last_poll.elapsed() >= configured_poll_interval(app)
+                    {
                         read_rate_limits(&mut writer, &mut next_id, &mut pending_usage)?;
                         last_poll = Instant::now();
                     }
@@ -2142,6 +2213,7 @@ pub fn run() {
 
     let app = tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_autostart::init(
             MacosLauncher::LaunchAgent,
             None,
@@ -2195,6 +2267,7 @@ pub fn run() {
 
             let app_handle = app.handle().clone();
             if let Some(capsule) = app.get_webview_window(CAPSULE_LABEL) {
+                capsule.set_always_on_top(startup_settings.capsule_always_on_top)?;
                 place_capsule(&app_handle, &capsule);
                 capsule.show()?;
             }

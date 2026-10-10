@@ -2,12 +2,23 @@ import { useEffect, useLayoutEffect, useRef, useState, type MouseEvent } from "r
 import { invoke, isTauri } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
+import { sendNotification } from "@tauri-apps/plugin-notification";
 import { useUsage } from "../hooks/useUsage";
-import { usageColor, usagePaceColor } from "../utils/usage";
+import { DEFAULT_APP_SETTINGS, type AppSettings } from "../types/appSettings";
+import { usageColor, usagePaceColor, usagePaceState } from "../utils/usage";
 import { FastModeIndicator } from "./FastModeIndicator";
 
 const TOOLTIP_HANDOFF_DELAY_MS = 800;
 type Theme = "dark" | "light";
+type Language = "zh" | "en";
+
+function readLanguagePreference(): Language {
+  try {
+    return window.localStorage.getItem("capsulemeter-language") === "en" ? "en" : "zh";
+  } catch {
+    return "zh";
+  }
+}
 
 function readThemePreference(): Theme {
   try {
@@ -21,10 +32,13 @@ export function FloatingUsageCapsule() {
   const usage = useUsage();
   const [now, setNow] = useState(Date.now());
   const [theme, setTheme] = useState<Theme>(readThemePreference);
+  const [language, setLanguage] = useState<Language>(readLanguagePreference);
+  const [appSettings, setAppSettings] = useState<AppSettings>(DEFAULT_APP_SETTINGS);
   const [capsuleWidth, setCapsuleWidth] = useState(120);
   const capsuleRef = useRef<HTMLElement | null>(null);
   const requestedWidth = useRef<number | null>(null);
   const showTimer = useRef<number | undefined>(undefined);
+  const alertedPeriods = useRef(new Map<string, number | null>());
 
   useEffect(() => {
     const timer = window.setInterval(() => setNow(Date.now()), 30_000);
@@ -48,6 +62,7 @@ export function FloatingUsageCapsule() {
     };
     const onStorage = (event: StorageEvent) => {
       if (event.key === "capsulemeter-theme") applyTheme(event.newValue);
+      if (event.key === "capsulemeter-language") setLanguage(readLanguagePreference());
     };
 
     window.addEventListener("storage", onStorage);
@@ -66,6 +81,94 @@ export function FloatingUsageCapsule() {
       unlisten?.();
     };
   }, []);
+
+  useEffect(() => {
+    if (!isTauri()) return;
+
+    let disposed = false;
+    let unlisten: (() => void) | undefined;
+    const applySettings = (settings: AppSettings) => {
+      if (!disposed) setAppSettings(settings);
+    };
+
+    void invoke<AppSettings>("get_startup_settings").then(applySettings).catch((error) => {
+      console.error("Could not load CapsuleMeterX settings", error);
+    });
+    void listen<AppSettings>("app-settings-updated", (event) => {
+      applySettings(event.payload);
+    }).then((stopListening) => {
+      if (disposed) stopListening();
+      else unlisten = stopListening;
+    });
+
+    return () => {
+      disposed = true;
+      unlisten?.();
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!isTauri() || usage.status !== "online") return;
+
+    const notifyOncePerWindow = (
+      kind: "balance" | "pace",
+      windowId: string,
+      resetsAt: number | null,
+      body: string,
+    ) => {
+      const key = kind + ":" + windowId;
+      if (alertedPeriods.current.get(key) === resetsAt) return;
+      alertedPeriods.current.set(key, resetsAt);
+      try {
+        sendNotification({
+          title: language === "zh" ? "CapsuleMeterX 用量提醒" : "CapsuleMeterX usage alert",
+          body,
+        });
+      } catch (error) {
+        console.error("Could not send CapsuleMeterX notification", error);
+      }
+    };
+
+    const windows = [
+      { window: usage.fiveHour, label: language === "zh" ? "5 小时" : "5-hour" },
+      { window: usage.weekly, label: language === "zh" ? "本周" : "Weekly" },
+    ];
+
+    for (const { window, label } of windows) {
+      if (!window) continue;
+
+      if (
+        appSettings.lowBalanceAlertEnabled &&
+        window.remainingPercent <= appSettings.lowBalanceThresholdPercent
+      ) {
+        notifyOncePerWindow(
+          "balance",
+          window.id,
+          window.resetsAt,
+          language === "zh"
+            ? label + "剩余 " + window.remainingPercent + "%，已达到 " + appSettings.lowBalanceThresholdPercent + "% 提醒阈值。"
+            : label + " usage has " + window.remainingPercent + "% remaining, at the " + appSettings.lowBalanceThresholdPercent + "% alert threshold.",
+        );
+      }
+
+      if (appSettings.usagePaceAlertEnabled) {
+        const pace = usagePaceState(window, now);
+        const paceReached = appSettings.usagePaceAlertThreshold === "fast"
+          ? pace === "fast" || pace === "very-fast"
+          : pace === "very-fast";
+        if (paceReached) {
+          notifyOncePerWindow(
+            "pace",
+            window.id,
+            window.resetsAt,
+            language === "zh"
+              ? label + "消耗速度" + (pace === "very-fast" ? "过快。" : "偏快。")
+              : label + " usage is being consumed " + (pace === "very-fast" ? "very quickly." : "quickly."),
+          );
+        }
+      }
+    }
+  }, [appSettings, language, now, usage]);
 
   useEffect(
     () => () => {
@@ -135,6 +238,7 @@ export function FloatingUsageCapsule() {
       ref={capsuleRef}
       className={`capsule${offline ? " capsule--offline" : ""}`}
       data-tauri-drag-region
+      style={{ opacity: appSettings.capsuleOpacityPercent / 100 }}
       onMouseEnter={onMouseEnter}
       onMouseLeave={onMouseLeave}
       onMouseDown={onMouseDown}

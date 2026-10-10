@@ -2,7 +2,12 @@ import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { flushSync } from "react-dom";
 import { invoke, isTauri } from "@tauri-apps/api/core";
 import { emit, listen } from "@tauri-apps/api/event";
+import {
+  isPermissionGranted,
+  requestPermission,
+} from "@tauri-apps/plugin-notification";
 import { useUsage } from "../hooks/useUsage";
+import { DEFAULT_APP_SETTINGS, type AppSettings } from "../types/appSettings";
 import type { ResetCardExpiry, UsageWindow } from "../types/usage";
 import {
   remainingLabel,
@@ -19,9 +24,6 @@ import type { UsagePaceState } from "../utils/usage";
 type ResetDialogState = "confirm" | "loading" | "success" | "error";
 type Language = "zh" | "en";
 type Theme = "dark" | "light";
-type StartupSettings = {
-  startWithWindows: boolean;
-};
 
 const TEXT = {
   zh: {
@@ -33,13 +35,32 @@ const TEXT = {
     switchToDark: "切换到暗黑主题",
     statistics: "打开统计",
     settings: "设置",
-    startupSettings: "启动设置",
-    settingsDescription: "管理 CapsuleMeterX 的启动方式。",
+    startupSettings: "偏好设置",
+    settingsDescription: "调整胶囊外观、用量刷新和提醒。",
     startWithWindows: "登录 Windows 时启动",
     startWithWindowsHint: "登录 Windows 后自动显示胶囊。",
+    capsuleSection: "胶囊",
+    capsuleAlwaysOnTop: "窗口置顶",
+    capsuleAlwaysOnTopHint: "让胶囊显示在其他窗口上方。",
+    capsuleOpacity: "胶囊透明度",
+    capsuleOpacityHint: "拖动滑块调整胶囊及文字的透明度。",
+    refreshSection: "刷新",
+    refreshInterval: "用量刷新间隔",
+    refreshIntervalHint: "从 Codex App Server 定时读取用量。",
+    minutes: "分钟",
+    alertsSection: "提醒",
+    lowBalanceAlert: "余额偏低时提醒",
+    lowBalanceAlertHint: "5 小时或本周剩余量低于阈值时发送系统通知。",
+    lowBalanceThreshold: "低余额阈值",
+    usagePaceAlert: "消耗速度过快时提醒",
+    usagePaceAlertHint: "达到所选消耗速度时发送系统通知。",
+    usagePaceThreshold: "提醒速度",
+    paceThresholdFast: "偏快（≥1.15×）",
+    paceThresholdVeryFast: "过快（≥1.5×）",
+    notificationPermissionDenied: "未获得系统通知权限，提醒设置未启用。",
     settingsLoading: "正在读取设置…",
-    settingsLoadError: "无法读取启动设置：",
-    settingsSaveError: "无法保存启动设置：",
+    settingsLoadError: "无法读取设置：",
+    settingsSaveError: "无法保存设置：",
     offline: "无法连接 Codex App Server",
     fiveHour: "5 小时剩余",
     weekly: "本周剩余",
@@ -99,13 +120,32 @@ const TEXT = {
     switchToDark: "Switch to dark theme",
     statistics: "Open statistics",
     settings: "Settings",
-    startupSettings: "Startup settings",
-    settingsDescription: "Manage how CapsuleMeterX starts.",
+    startupSettings: "Preferences",
+    settingsDescription: "Adjust the capsule, refresh interval, and alerts.",
     startWithWindows: "Start when I sign in to Windows",
     startWithWindowsHint: "Show the capsule after you sign in.",
+    capsuleSection: "Capsule",
+    capsuleAlwaysOnTop: "Keep on top",
+    capsuleAlwaysOnTopHint: "Keep the capsule above other windows.",
+    capsuleOpacity: "Capsule opacity",
+    capsuleOpacityHint: "Adjust the opacity of the capsule and its text.",
+    refreshSection: "Refresh",
+    refreshInterval: "Usage refresh interval",
+    refreshIntervalHint: "Read usage from Codex App Server on a schedule.",
+    minutes: "minutes",
+    alertsSection: "Alerts",
+    lowBalanceAlert: "Low balance alert",
+    lowBalanceAlertHint: "Notify when 5-hour or weekly usage falls below the threshold.",
+    lowBalanceThreshold: "Low balance threshold",
+    usagePaceAlert: "Fast usage alert",
+    usagePaceAlertHint: "Notify when the usage pace reaches the selected level.",
+    usagePaceThreshold: "Alert pace",
+    paceThresholdFast: "Fast (≥1.15×)",
+    paceThresholdVeryFast: "Very fast (≥1.5×)",
+    notificationPermissionDenied: "Notification permission was not granted; the alert was not enabled.",
     settingsLoading: "Loading settings…",
-    settingsLoadError: "Could not load startup settings: ",
-    settingsSaveError: "Could not save startup settings: ",
+    settingsLoadError: "Could not load settings: ",
+    settingsSaveError: "Could not save settings: ",
     offline: "Unable to connect to Codex App Server",
     fiveHour: "5-hour remaining",
     weekly: "Weekly remaining",
@@ -373,9 +413,7 @@ export function UsageTooltipWindow() {
   const [selectedCard, setSelectedCard] = useState<ResetCardExpiry | null>(null);
   const [dialogState, setDialogState] = useState<ResetDialogState | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
-  const [startupSettings, setStartupSettings] = useState<StartupSettings>({
-    startWithWindows: false,
-  });
+  const [appSettings, setAppSettings] = useState<AppSettings>(DEFAULT_APP_SETTINGS);
   const [settingsLoading, setSettingsLoading] = useState(false);
   const [settingsSaving, setSettingsSaving] = useState(false);
   const [settingsError, setSettingsError] = useState("");
@@ -559,8 +597,8 @@ export function UsageTooltipWindow() {
     setSettingsLoading(true);
     setSettingsError("");
     try {
-      const loaded = await invoke<StartupSettings>("get_startup_settings");
-      setStartupSettings(loaded);
+      const loaded = await invoke<AppSettings>("get_startup_settings");
+      setAppSettings(loaded);
     } catch (error) {
       setSettingsError(`${text.settingsLoadError}${error instanceof Error ? error.message : String(error)}`);
     } finally {
@@ -568,22 +606,45 @@ export function UsageTooltipWindow() {
     }
   };
 
-  const updateStartupSetting = async (key: keyof StartupSettings, value: boolean) => {
+  const updateAppSetting = async <Key extends keyof AppSettings,>(
+    key: Key,
+    value: AppSettings[Key],
+  ) => {
     if (settingsSaving) return;
-    const previous = startupSettings;
+    const enablingAlert = value === true &&
+      (key === "lowBalanceAlertEnabled" || key === "usagePaceAlertEnabled");
+    if (enablingAlert) {
+      try {
+        let permissionGranted = await isPermissionGranted();
+        if (!permissionGranted) permissionGranted = (await requestPermission()) === "granted";
+        if (!permissionGranted) {
+          setSettingsError(text.notificationPermissionDenied);
+          return;
+        }
+      } catch (error) {
+        setSettingsError(`${text.settingsSaveError}${error instanceof Error ? error.message : String(error)}`);
+        return;
+      }
+    }
+
+    const previous = appSettings;
     const next = { ...previous, [key]: value };
-    setStartupSettings(next);
+    setAppSettings(next);
     setSettingsSaving(true);
     setSettingsError("");
     try {
-      const saved = await invoke<StartupSettings>("set_startup_settings", { settings: next });
-      setStartupSettings(saved);
+      const saved = await invoke<AppSettings>("set_startup_settings", { settings: next });
+      setAppSettings(saved);
     } catch (error) {
-      setStartupSettings(previous);
+      setAppSettings(previous);
       setSettingsError(`${text.settingsSaveError}${error instanceof Error ? error.message : String(error)}`);
     } finally {
       setSettingsSaving(false);
     }
+  };
+
+  const previewCapsuleOpacity = (opacity: number) => {
+    setAppSettings((current) => ({ ...current, capsuleOpacityPercent: opacity }));
   };
 
   const closeResetDialog = () => {
@@ -945,19 +1006,148 @@ export function UsageTooltipWindow() {
                 <p className="settings-dialog__status">{text.settingsLoading}</p>
               ) : (
                 <div className="settings-dialog__options">
-                  <label className="settings-option">
-                    <span className="settings-option__copy">
-                      <strong>{text.startWithWindows}</strong>
-                      <span>{text.startWithWindowsHint}</span>
-                    </span>
-                    <input
-                      type="checkbox"
-                      role="switch"
-                      checked={startupSettings.startWithWindows}
-                      disabled={settingsSaving}
-                      onChange={(event) => void updateStartupSetting("startWithWindows", event.currentTarget.checked)}
-                    />
-                  </label>
+                  <section className="settings-group">
+                    <h3>{text.capsuleSection}</h3>
+                    <label className="settings-option">
+                      <span className="settings-option__copy">
+                        <strong>{text.startWithWindows}</strong>
+                        <span>{text.startWithWindowsHint}</span>
+                      </span>
+                      <input
+                        type="checkbox"
+                        role="switch"
+                        checked={appSettings.startWithWindows}
+                        disabled={settingsSaving}
+                        onChange={(event) => void updateAppSetting("startWithWindows", event.currentTarget.checked)}
+                      />
+                    </label>
+                    <label className="settings-option">
+                      <span className="settings-option__copy">
+                        <strong>{text.capsuleAlwaysOnTop}</strong>
+                        <span>{text.capsuleAlwaysOnTopHint}</span>
+                      </span>
+                      <input
+                        type="checkbox"
+                        role="switch"
+                        checked={appSettings.capsuleAlwaysOnTop}
+                        disabled={settingsSaving}
+                        onChange={(event) => void updateAppSetting("capsuleAlwaysOnTop", event.currentTarget.checked)}
+                      />
+                    </label>
+                    <div className="settings-range">
+                      <div className="settings-range__header">
+                        <span className="settings-option__copy">
+                          <strong>{text.capsuleOpacity}</strong>
+                          <span>{text.capsuleOpacityHint}</span>
+                        </span>
+                        <output>{appSettings.capsuleOpacityPercent}%</output>
+                      </div>
+                      <input
+                        className="settings-range__input"
+                        aria-label={text.capsuleOpacity}
+                        type="range"
+                        min="40"
+                        max="100"
+                        step="5"
+                        value={appSettings.capsuleOpacityPercent}
+                        disabled={settingsSaving}
+                        onChange={(event) => previewCapsuleOpacity(Number(event.currentTarget.value))}
+                        onPointerUp={(event) => void updateAppSetting("capsuleOpacityPercent", Number(event.currentTarget.value))}
+                        onKeyUp={(event) => void updateAppSetting("capsuleOpacityPercent", Number(event.currentTarget.value))}
+                      />
+                    </div>
+                  </section>
+                  <section className="settings-group">
+                    <h3>{text.refreshSection}</h3>
+                    <div className="settings-control">
+                      <span className="settings-option__copy">
+                        <strong>{text.refreshInterval}</strong>
+                        <span>{text.refreshIntervalHint}</span>
+                      </span>
+                      <select
+                        aria-label={text.refreshInterval}
+                        value={appSettings.refreshIntervalMinutes}
+                        disabled={settingsSaving}
+                        onChange={(event) => void updateAppSetting("refreshIntervalMinutes", Number(event.currentTarget.value))}
+                      >
+                        {[1, 2, 5, 10].map((minutes) => (
+                          <option key={minutes} value={minutes}>{minutes} {text.minutes}</option>
+                        ))}
+                      </select>
+                    </div>
+                  </section>
+                  <section className="settings-group">
+                    <h3>{text.alertsSection}</h3>
+                    <label className="settings-option">
+                      <span className="settings-option__copy">
+                        <strong>{text.lowBalanceAlert}</strong>
+                        <span>{text.lowBalanceAlertHint}</span>
+                      </span>
+                      <input
+                        type="checkbox"
+                        role="switch"
+                        checked={appSettings.lowBalanceAlertEnabled}
+                        disabled={settingsSaving}
+                        onChange={(event) => void updateAppSetting("lowBalanceAlertEnabled", event.currentTarget.checked)}
+                      />
+                    </label>
+                    <div className={`settings-range${appSettings.lowBalanceAlertEnabled ? "" : " settings-control--disabled"}`}>
+                      <div className="settings-range__header">
+                        <span className="settings-option__copy">
+                          <strong>{text.lowBalanceThreshold}</strong>
+                        </span>
+                        <output>{appSettings.lowBalanceThresholdPercent}%</output>
+                      </div>
+                      <input
+                        className="settings-range__input"
+                        aria-label={text.lowBalanceThreshold}
+                        type="range"
+                        min="5"
+                        max="50"
+                        step="5"
+                        value={appSettings.lowBalanceThresholdPercent}
+                        disabled={settingsSaving || !appSettings.lowBalanceAlertEnabled}
+                        onChange={(event) => {
+                          const threshold = Number(event.currentTarget.value);
+                          setAppSettings((current) => ({ ...current, lowBalanceThresholdPercent: threshold }));
+                        }}
+                        onPointerUp={(event) => void updateAppSetting("lowBalanceThresholdPercent", Number(event.currentTarget.value))}
+                        onKeyUp={(event) => void updateAppSetting("lowBalanceThresholdPercent", Number(event.currentTarget.value))}
+                      />
+                    </div>
+                    <label className="settings-option">
+                      <span className="settings-option__copy">
+                        <strong>{text.usagePaceAlert}</strong>
+                        <span>{text.usagePaceAlertHint}</span>
+                      </span>
+                      <input
+                        type="checkbox"
+                        role="switch"
+                        checked={appSettings.usagePaceAlertEnabled}
+                        disabled={settingsSaving}
+                        onChange={(event) => void updateAppSetting("usagePaceAlertEnabled", event.currentTarget.checked)}
+                      />
+                    </label>
+                    <div className={`settings-control${appSettings.usagePaceAlertEnabled ? "" : " settings-control--disabled"}`}>
+                      <span className="settings-option__copy">
+                        <strong>{text.usagePaceThreshold}</strong>
+                      </span>
+                      <select
+                        aria-label={text.usagePaceThreshold}
+                        value={appSettings.usagePaceAlertThreshold}
+                        disabled={settingsSaving || !appSettings.usagePaceAlertEnabled}
+                        onChange={(event) => {
+                          const threshold = event.currentTarget.value;
+                          if (threshold === "fast" || threshold === "very-fast") {
+                            void updateAppSetting("usagePaceAlertThreshold", threshold);
+                          }
+                        }}
+                      >
+                        <option value="fast">{text.paceThresholdFast}</option>
+                        <option value="very-fast">{text.paceThresholdVeryFast}</option>
+                      </select>
+                    </div>
+                  </section>
                 </div>
               )}
               {settingsError && <p className="settings-dialog__error" role="alert">{settingsError}</p>}
