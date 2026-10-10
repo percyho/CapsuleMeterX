@@ -7,9 +7,11 @@ export function usageColor(remaining: number | null): string {
   return "var(--usage-green)";
 }
 
-export function usagePaceColor(window: UsageWindow | null, now: number): string {
+export type UsagePaceState = "unknown" | "normal" | "fast" | "very-fast";
+
+export function usagePaceState(window: UsageWindow | null, now: number): UsagePaceState {
   if (!window || window.resetsAt === null || window.windowDurationMins <= 0) {
-    return "var(--text-muted)";
+    return "unknown";
   }
 
   const durationSeconds = window.windowDurationMins * 60;
@@ -21,9 +23,18 @@ export function usagePaceColor(window: UsageWindow | null, now: number): string 
   const usedFraction = Math.max(0, Math.min(100, window.usedPercent)) / 100;
   const paceRatio = usedFraction / elapsedFraction;
 
-  if (paceRatio >= 1.5) return "var(--usage-danger)";
-  if (paceRatio >= 1.15) return "var(--usage-warning)";
-  return "var(--usage-green)";
+  if (paceRatio >= 1.5) return "very-fast";
+  if (paceRatio >= 1.15) return "fast";
+  return "normal";
+}
+
+export function usagePaceColor(window: UsageWindow | null, now: number): string {
+  switch (usagePaceState(window, now)) {
+    case "normal": return "var(--usage-green)";
+    case "fast": return "var(--usage-warning)";
+    case "very-fast": return "var(--usage-danger)";
+    default: return "var(--text-muted)";
+  }
 }
 
 export function remainingLabel(window: UsageWindow | null): string {
