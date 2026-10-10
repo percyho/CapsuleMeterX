@@ -305,12 +305,11 @@ function StatisticsIcon() {
   );
 }
 
-function Settings2Icon() {
+function SettingsIcon() {
   return (
     <svg className="usage-tooltip__toolbar-icon" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-      <path d="M20 7h-9M14 17H5" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
-      <circle cx="17" cy="7" r="3" stroke="currentColor" strokeWidth="1.8" />
-      <circle cx="7" cy="17" r="3" stroke="currentColor" strokeWidth="1.8" />
+      <path d="M12.22 2h-.44a2 2 0 0 0-1.99 1.78l-.44 2.87a7.03 7.03 0 0 0-1.46.85l-2.7-.88a2 2 0 0 0-2.5 1.15l-.22.4a2 2 0 0 0 .48 2.55l2.28 1.8a7.1 7.1 0 0 0 0 1.7l-2.28 1.8a2 2 0 0 0-.48 2.55l.22.4a2 2 0 0 0 2.5 1.15l2.7-.88c.44.35.93.64 1.46.85l.44 2.87a2 2 0 0 0 1.99 1.78h.44a2 2 0 0 0 1.99-1.78l.44-2.87c.53-.21 1.02-.5 1.46-.85l2.7.88a2 2 0 0 0 2.5-1.15l.22-.4a2 2 0 0 0-.48-2.55l-2.28-1.8a7.1 7.1 0 0 0 0-1.7l2.28-1.8a2 2 0 0 0 .48-2.55l-.22-.4a2 2 0 0 0-2.5-1.15l-2.7.88c-.44-.35-.93-.64-1.46-.85l-.44-2.87A2 2 0 0 0 12.22 2z" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+      <circle cx="12" cy="12" r="3" stroke="currentColor" strokeWidth="1.5" />
     </svg>
   );
 }
@@ -763,7 +762,7 @@ export function UsageTooltipWindow() {
               title={text.settings}
               onClick={() => void openSettings()}
             >
-              <Settings2Icon />
+              <SettingsIcon />
             </button>
           </div>
         </header>
