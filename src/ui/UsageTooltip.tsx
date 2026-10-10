@@ -21,7 +21,6 @@ type Language = "zh" | "en";
 type Theme = "dark" | "light";
 type StartupSettings = {
   startWithWindows: boolean;
-  startWithChatgpt: boolean;
 };
 
 const TEXT = {
@@ -38,8 +37,6 @@ const TEXT = {
     settingsDescription: "管理 CapsuleMeterX 的启动方式。",
     startWithWindows: "登录 Windows 时启动",
     startWithWindowsHint: "登录 Windows 后自动显示胶囊。",
-    startWithChatgpt: "ChatGPT 桌面版启动时显示",
-    startWithChatgptHint: "应用会在 Windows 登录后于后台监测 ChatGPT 并显示胶囊。请保持 CapsuleMeterX 在后台运行；退出应用后，联动会暂停，直到下次登录或重新打开应用。",
     settingsLoading: "正在读取设置…",
     settingsLoadError: "无法读取启动设置：",
     settingsSaveError: "无法保存启动设置：",
@@ -106,8 +103,6 @@ const TEXT = {
     settingsDescription: "Manage how CapsuleMeterX starts.",
     startWithWindows: "Start when I sign in to Windows",
     startWithWindowsHint: "Show the capsule after you sign in.",
-    startWithChatgpt: "Show when the ChatGPT desktop app opens",
-    startWithChatgptHint: "CapsuleMeterX monitors ChatGPT in the background after sign-in and shows the capsule when it opens. Keep CapsuleMeterX running; quitting it pauses the link until the next sign-in or app launch.",
     settingsLoading: "Loading settings…",
     settingsLoadError: "Could not load startup settings: ",
     settingsSaveError: "Could not save startup settings: ",
@@ -270,11 +265,12 @@ function StatisticsIcon() {
   );
 }
 
-function SettingsIcon() {
+function Settings2Icon() {
   return (
     <svg className="usage-tooltip__toolbar-icon" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-      <path d="M12 8.6a3.4 3.4 0 1 0 0 6.8 3.4 3.4 0 0 0 0-6.8Z" stroke="currentColor" strokeWidth="1.7" />
-      <path d="m19.2 13.9 1.3 1-1.3 2.3-1.6-.6a7.7 7.7 0 0 1-1.7 1l-.2 1.7h-2.7l-.3-1.7a7.7 7.7 0 0 1-1.7-1l-1.6.6-1.3-2.3 1.3-1a7.3 7.3 0 0 1 0-2l-1.3-1 1.3-2.3 1.6.6a7.7 7.7 0 0 1 1.7-1l.3-1.7h2.7l.2 1.7a7.7 7.7 0 0 1 1.7 1l1.6-.6 1.3 2.3-1.3 1a7.3 7.3 0 0 1 0 2Z" transform="translate(-1.4 -1.3)" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+      <path d="M20 7h-9M14 17H5" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+      <circle cx="17" cy="7" r="3" stroke="currentColor" strokeWidth="1.8" />
+      <circle cx="7" cy="17" r="3" stroke="currentColor" strokeWidth="1.8" />
     </svg>
   );
 }
@@ -379,7 +375,6 @@ export function UsageTooltipWindow() {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [startupSettings, setStartupSettings] = useState<StartupSettings>({
     startWithWindows: false,
-    startWithChatgpt: false,
   });
   const [settingsLoading, setSettingsLoading] = useState(false);
   const [settingsSaving, setSettingsSaving] = useState(false);
@@ -707,7 +702,7 @@ export function UsageTooltipWindow() {
               title={text.settings}
               onClick={() => void openSettings()}
             >
-              <SettingsIcon />
+              <Settings2Icon />
             </button>
           </div>
         </header>
@@ -961,19 +956,6 @@ export function UsageTooltipWindow() {
                       checked={startupSettings.startWithWindows}
                       disabled={settingsSaving}
                       onChange={(event) => void updateStartupSetting("startWithWindows", event.currentTarget.checked)}
-                    />
-                  </label>
-                  <label className="settings-option">
-                    <span className="settings-option__copy">
-                      <strong>{text.startWithChatgpt}</strong>
-                      <span>{text.startWithChatgptHint}</span>
-                    </span>
-                    <input
-                      type="checkbox"
-                      role="switch"
-                      checked={startupSettings.startWithChatgpt}
-                      disabled={settingsSaving}
-                      onChange={(event) => void updateStartupSetting("startWithChatgpt", event.currentTarget.checked)}
                     />
                   </label>
                 </div>

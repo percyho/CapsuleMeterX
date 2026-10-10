@@ -17,13 +17,6 @@ use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent}
 use tauri::{AppHandle, Emitter, LogicalSize, Manager, PhysicalPosition, Rect, State, WindowEvent};
 use tauri_plugin_autostart::{MacosLauncher, ManagerExt as AutostartManagerExt};
 
-#[cfg(windows)]
-use windows_sys::Win32::Foundation::CloseHandle;
-#[cfg(windows)]
-use windows_sys::Win32::System::Diagnostics::ToolHelp::{
-    CreateToolhelp32Snapshot, Process32FirstW, Process32NextW, PROCESSENTRY32W, TH32CS_SNAPPROCESS,
-};
-
 const CAPSULE_LABEL: &str = "capsule";
 const TOOLTIP_LABEL: &str = "tooltip";
 const STATISTICS_LABEL: &str = "statistics";
@@ -104,7 +97,6 @@ struct SavedPosition {
 #[serde(rename_all = "camelCase")]
 struct StartupSettings {
     start_with_windows: bool,
-    start_with_chatgpt: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -250,9 +242,8 @@ fn set_startup_settings(
     state: State<'_, AppState>,
     settings: StartupSettings,
 ) -> Result<StartupSettings, String> {
-    let launch_at_login = settings.start_with_windows || settings.start_with_chatgpt;
     let autostart = app.autolaunch();
-    if launch_at_login {
+    if settings.start_with_windows {
         autostart.enable().map_err(|error| error.to_string())?;
     } else {
         autostart.disable().map_err(|error| error.to_string())?;
@@ -261,12 +252,6 @@ fn set_startup_settings(
     save_startup_settings(&app, &settings)?;
     if let Ok(mut current) = state.startup_settings.lock() {
         *current = settings.clone();
-    }
-
-    if settings.start_with_windows || !settings.start_with_chatgpt || is_chatgpt_running() {
-        set_capsule_visible(&app, true);
-    } else {
-        set_capsule_visible(&app, false);
     }
 
     Ok(settings)
@@ -349,98 +334,6 @@ fn save_startup_settings(app: &AppHandle, settings: &StartupSettings) -> Result<
     let path = startup_settings_file(app)?;
     let contents = serde_json::to_vec_pretty(settings).map_err(|error| error.to_string())?;
     fs::write(path, contents).map_err(|error| error.to_string())
-}
-
-fn set_capsule_visible(app: &AppHandle, visible: bool) {
-    let Some(capsule) = app.get_webview_window(CAPSULE_LABEL) else {
-        return;
-    };
-    if visible {
-        place_capsule(app, &capsule);
-        if !capsule.is_visible().unwrap_or(false) {
-            let _ = capsule.show();
-        }
-    } else if capsule.is_visible().unwrap_or(false) {
-        let _ = capsule.hide();
-    }
-}
-
-#[cfg(windows)]
-fn is_chatgpt_running() -> bool {
-    let snapshot = unsafe { CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0) };
-    if snapshot.is_null() || snapshot as isize == -1 {
-        return false;
-    }
-
-    let mut entry = unsafe { std::mem::zeroed::<PROCESSENTRY32W>() };
-    entry.dwSize = std::mem::size_of::<PROCESSENTRY32W>() as u32;
-    let mut has_entry = unsafe { Process32FirstW(snapshot, &mut entry) != 0 };
-    let mut is_running = false;
-    while has_entry {
-        let length = entry
-            .szExeFile
-            .iter()
-            .position(|unit| *unit == 0)
-            .unwrap_or(entry.szExeFile.len());
-        let executable = String::from_utf16_lossy(&entry.szExeFile[..length]);
-        if executable.eq_ignore_ascii_case("ChatGPT.exe") {
-            is_running = true;
-            break;
-        }
-        has_entry = unsafe { Process32NextW(snapshot, &mut entry) != 0 };
-    }
-    unsafe { CloseHandle(snapshot) };
-    is_running
-}
-
-#[cfg(not(windows))]
-fn is_chatgpt_running() -> bool {
-    false
-}
-
-fn start_chatgpt_watcher(app: AppHandle) {
-    thread::spawn(move || {
-        let mut monitoring_enabled = false;
-        let mut chatgpt_was_running = false;
-        let mut first_poll = true;
-        loop {
-            if !first_poll {
-                thread::sleep(Duration::from_secs(2));
-            }
-            first_poll = false;
-            let Some(state) = app.try_state::<AppState>() else {
-                continue;
-            };
-            let settings = state
-                .startup_settings
-                .lock()
-                .map(|settings| settings.clone())
-                .unwrap_or_default();
-            if !settings.start_with_chatgpt {
-                monitoring_enabled = false;
-                chatgpt_was_running = false;
-                continue;
-            }
-
-            let chatgpt_is_running = is_chatgpt_running();
-            if !monitoring_enabled {
-                monitoring_enabled = true;
-                chatgpt_was_running = chatgpt_is_running;
-                if chatgpt_is_running {
-                    set_capsule_visible(&app, true);
-                }
-                continue;
-            }
-
-            if chatgpt_is_running && !chatgpt_was_running {
-                set_capsule_visible(&app, true);
-            } else if !chatgpt_is_running && chatgpt_was_running && !settings.start_with_windows {
-                hide_tooltip_window(&app);
-                set_capsule_visible(&app, false);
-            }
-            chatgpt_was_running = chatgpt_is_running;
-        }
-    });
 }
 
 fn load_statistics(app: &AppHandle) -> StatisticsData {
@@ -2251,7 +2144,7 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_autostart::init(
             MacosLauncher::LaunchAgent,
-            Some(vec!["--background-startup"]),
+            None,
         ))
         .manage(AppState::new(
             refresh_tx,
@@ -2289,10 +2182,8 @@ pub fn run() {
             }
 
             let autostart = app.autolaunch();
-            let should_launch_at_login =
-                startup_settings.start_with_windows || startup_settings.start_with_chatgpt;
+            let should_launch_at_login = startup_settings.start_with_windows;
             if should_launch_at_login {
-                // Refresh the command line so older registrations gain the background flag.
                 if let Err(error) = autostart.enable() {
                     eprintln!("Could not sync startup registration: {error}");
                 }
@@ -2305,14 +2196,9 @@ pub fn run() {
             let app_handle = app.handle().clone();
             if let Some(capsule) = app.get_webview_window(CAPSULE_LABEL) {
                 place_capsule(&app_handle, &capsule);
-                let launched_in_background =
-                    std::env::args().any(|argument| argument == "--background-startup");
-                if !launched_in_background || startup_settings.start_with_windows {
-                    capsule.show()?;
-                }
+                capsule.show()?;
             }
 
-            start_chatgpt_watcher(app.handle().clone());
             thread::spawn(move || {
                 run_usage_worker(app_handle, refresh_rx, token_refresh_rx, consume_reset_rx)
             });
