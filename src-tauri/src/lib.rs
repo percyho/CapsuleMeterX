@@ -1,3 +1,5 @@
+mod quota_api;
+
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::collections::{HashMap, HashSet};
@@ -154,6 +156,8 @@ struct QuotaHistorySample {
 struct TokenDailyBucket {
     start_date: String,
     tokens: i64,
+    input_tokens: Option<i64>,
+    output_tokens: Option<i64>,
     data_source: String,
 }
 
@@ -161,6 +165,8 @@ struct TokenDailyBucket {
 #[serde(rename_all = "camelCase")]
 struct TokenUsageSummary {
     lifetime_tokens: Option<i64>,
+    input_tokens: Option<i64>,
+    output_tokens: Option<i64>,
     peak_daily_tokens: Option<i64>,
     longest_running_turn_sec: Option<i64>,
     current_streak_days: Option<i64>,
@@ -214,6 +220,7 @@ struct TrayAnchor {
 
 struct AppState {
     usage: Mutex<UsageSnapshot>,
+    quota_refresh_tx: Sender<()>,
     refresh_tx: Sender<()>,
     token_refresh_tx: Sender<()>,
     consume_reset_tx: Sender<ConsumeResetCardRequest>,
@@ -222,18 +229,21 @@ struct AppState {
     tooltip_epoch: Arc<AtomicU64>,
     tray_anchor: Mutex<Option<TrayAnchor>>,
     drag_watch_active: Arc<AtomicBool>,
+    direct_quota_ready: AtomicBool,
     server_child: Mutex<Option<Arc<Mutex<Child>>>>,
     startup_settings: Mutex<StartupSettings>,
 }
 
 impl AppState {
     fn new(
+        quota_refresh_tx: Sender<()>,
         refresh_tx: Sender<()>,
         token_refresh_tx: Sender<()>,
         consume_reset_tx: Sender<ConsumeResetCardRequest>,
     ) -> Self {
         Self {
             usage: Mutex::new(UsageSnapshot::default()),
+            quota_refresh_tx,
             refresh_tx,
             token_refresh_tx,
             consume_reset_tx,
@@ -242,6 +252,7 @@ impl AppState {
             tooltip_epoch: Arc::new(AtomicU64::new(0)),
             tray_anchor: Mutex::new(None),
             drag_watch_active: Arc::new(AtomicBool::new(false)),
+            direct_quota_ready: AtomicBool::new(false),
             server_child: Mutex::new(None),
             startup_settings: Mutex::new(StartupSettings::default()),
         }
@@ -309,6 +320,7 @@ fn set_startup_settings(
     }
     if previous.refresh_interval_minutes != settings.refresh_interval_minutes {
         let _ = state.refresh_tx.send(());
+        let _ = state.quota_refresh_tx.send(());
     }
     let _ = app.emit("app-settings-updated", settings.clone());
 
@@ -361,8 +373,9 @@ fn request_token_usage_refresh(app: &AppHandle, state: &AppState) -> Result<(), 
     }
     publish_statistics(app);
     if let Err(error) = state.token_refresh_tx.send(()) {
-        set_token_fetch_error(app, format!("Codex App Server is unavailable: {error}"));
-        return Err(error.to_string());
+        let message = format!("Token history worker is unavailable: {error}");
+        set_token_fetch_error(app, message.clone());
+        return Err(message);
     }
     Ok(())
 }
@@ -461,7 +474,7 @@ fn now_epoch_millis() -> i64 {
         .unwrap_or_default()
 }
 
-fn record_quota_sample(app: &AppHandle, snapshot: &UsageSnapshot) {
+fn record_quota_sample(app: &AppHandle, snapshot: &UsageSnapshot, data_source: &str) {
     if snapshot.five_hour.is_none() && snapshot.weekly.is_none() {
         return;
     }
@@ -480,7 +493,7 @@ fn record_quota_sample(app: &AppHandle, snapshot: &UsageSnapshot) {
             .as_ref()
             .map(|window| window.remaining_percent),
         weekly_resets_at: snapshot.weekly.as_ref().and_then(|window| window.resets_at),
-        data_source: "codex-app-server/account/rateLimits/read".into(),
+        data_source: data_source.into(),
     };
     let Some(state) = app.try_state::<AppState>() else {
         return;
@@ -515,6 +528,171 @@ fn record_quota_sample(app: &AppHandle, snapshot: &UsageSnapshot) {
     publish_quota_sample(app, sample);
 }
 
+const DIRECT_QUOTA_SOURCE: &str = "chatgpt.com/backend-api/wham/usage";
+const APP_SERVER_QUOTA_SOURCE: &str = "codex-app-server/account/rateLimits/read";
+
+fn has_quota_data(snapshot: &UsageSnapshot) -> bool {
+    snapshot.five_hour.is_some() || snapshot.weekly.is_some()
+}
+
+fn direct_quota_window(
+    value: Option<&Value>,
+    fallback_duration: u64,
+    id: &str,
+    label: &str,
+) -> Option<UsageWindow> {
+    let value = value?;
+    let used = value
+        .get("used_percent")
+        .or_else(|| value.get("usedPercent"))
+        .and_then(Value::as_f64)?;
+    let used_percent = used.round().clamp(0.0, 100.0) as u8;
+    let duration = value
+        .get("window_duration_mins")
+        .or_else(|| value.get("windowDurationMins"))
+        .and_then(Value::as_u64)
+        .unwrap_or(fallback_duration);
+
+    Some(UsageWindow {
+        id: id.into(),
+        label: label.into(),
+        used_percent,
+        remaining_percent: 100 - used_percent,
+        window_duration_mins: duration,
+        resets_at: value
+            .get("reset_at")
+            .or_else(|| value.get("resetsAt"))
+            .and_then(Value::as_i64)
+            .or_else(|| {
+                value
+                    .get("reset_after_seconds")
+                    .or_else(|| value.get("resetAfterSeconds"))
+                    .and_then(Value::as_i64)
+                    .map(|seconds| now_epoch_millis() / 1_000 + seconds)
+            }),
+    })
+}
+
+fn plan_name_from_type(plan: &str) -> String {
+    let normalized = match plan.to_ascii_lowercase().as_str() {
+        "free" => "Free".to_owned(),
+        "plus" => "Plus".to_owned(),
+        "pro" => "Pro".to_owned(),
+        "team" | "business" => "Team".to_owned(),
+        "enterprise" => "Enterprise".to_owned(),
+        other => other.to_owned(),
+    };
+    format!("ChatGPT {normalized}")
+}
+
+fn publish_direct_quota(app: &AppHandle, result: &Value) -> bool {
+    let rate_limit = result.get("rate_limit").or_else(|| result.get("rateLimit"));
+    let five_hour = direct_quota_window(
+        rate_limit.and_then(|limits| {
+            limits
+                .get("primary_window")
+                .or_else(|| limits.get("primaryWindow"))
+        }),
+        300,
+        "5h",
+        "5 小时",
+    );
+    let weekly = direct_quota_window(
+        rate_limit.and_then(|limits| {
+            limits
+                .get("secondary_window")
+                .or_else(|| limits.get("secondaryWindow"))
+        }),
+        10_080,
+        "week",
+        "本周",
+    );
+    if five_hour.is_none() && weekly.is_none() {
+        return false;
+    }
+
+    let mut snapshot = current_snapshot(app);
+    snapshot.status = "online".into();
+    if let Some(plan) = result
+        .get("plan_type")
+        .or_else(|| result.get("planType"))
+        .and_then(Value::as_str)
+    {
+        snapshot.plan_name = plan_name_from_type(plan);
+    }
+    snapshot.five_hour = five_hour;
+    snapshot.weekly = weekly;
+
+    if let Some(state) = app.try_state::<AppState>() {
+        state.direct_quota_ready.store(true, Ordering::Release);
+    }
+    publish_usage(app, snapshot.clone());
+    record_quota_sample(app, &snapshot, DIRECT_QUOTA_SOURCE);
+    true
+}
+
+fn mark_direct_quota_unavailable(app: &AppHandle, error: &str) {
+    eprintln!("CapsuleMeterX direct quota request failed: {error}");
+    let Some(state) = app.try_state::<AppState>() else {
+        return;
+    };
+    state.direct_quota_ready.store(false, Ordering::Release);
+
+    let server_is_running = state
+        .server_child
+        .lock()
+        .ok()
+        .is_some_and(|child| child.is_some());
+    let mut snapshot = current_snapshot(app);
+    if !server_is_running || !has_quota_data(&snapshot) {
+        snapshot.status = "offline".into();
+        publish_usage(app, snapshot);
+    }
+}
+
+fn publish_app_server_quota(app: &AppHandle, mut server_snapshot: UsageSnapshot) {
+    let direct_is_ready = app
+        .try_state::<AppState>()
+        .is_some_and(|state| state.direct_quota_ready.load(Ordering::Acquire));
+    if direct_is_ready {
+        let current = current_snapshot(app);
+        server_snapshot.status = current.status;
+        server_snapshot.plan_name = current.plan_name;
+        server_snapshot.five_hour = current.five_hour;
+        server_snapshot.weekly = current.weekly;
+        server_snapshot.fast_mode_enabled = server_snapshot
+            .fast_mode_enabled
+            .or(current.fast_mode_enabled);
+    }
+
+    publish_usage(app, server_snapshot.clone());
+    if !direct_is_ready {
+        record_quota_sample(app, &server_snapshot, APP_SERVER_QUOTA_SOURCE);
+    }
+}
+
+fn run_direct_quota_worker(app: AppHandle, refresh: Receiver<()>) {
+    loop {
+        match quota_api::fetch_usage() {
+            Ok(result) => {
+                if !publish_direct_quota(&app, &result) {
+                    mark_direct_quota_unavailable(
+                        &app,
+                        "Codex usage response did not contain quota windows",
+                    );
+                }
+            }
+            Err(error) => mark_direct_quota_unavailable(&app, &error),
+        }
+
+        match refresh.recv_timeout(configured_poll_interval(&app)) {
+            Ok(()) => while refresh.try_recv().is_ok() {},
+            Err(RecvTimeoutError::Timeout) => {}
+            Err(RecvTimeoutError::Disconnected) => break,
+        }
+    }
+}
+
 fn set_token_fetch_error(app: &AppHandle, error: String) {
     if let Some(state) = app.try_state::<AppState>() {
         if let Ok(mut statistics) = state.statistics.lock() {
@@ -539,59 +717,128 @@ fn save_token_usage(app: &AppHandle, history: &TokenUsageHistory) {
     }
 }
 
+fn token_count(value: Option<&Value>) -> Option<i64> {
+    let value = value?;
+    value
+        .as_i64()
+        .or_else(|| value.as_u64().and_then(|count| i64::try_from(count).ok()))
+        .or_else(|| {
+            value
+                .as_f64()
+                .filter(|count| count.is_finite() && *count >= 0.0)
+                .map(|count| count.round().min(i64::MAX as f64) as i64)
+        })
+        .filter(|count| *count >= 0)
+}
+
+fn sum_bucket_counts(
+    buckets: &[TokenDailyBucket],
+    select: fn(&TokenDailyBucket) -> Option<i64>,
+) -> Option<i64> {
+    buckets.iter().try_fold(0_i64, |total, bucket| {
+        Some(total.saturating_add(select(bucket)?))
+    })
+}
+
 fn update_token_usage(app: &AppHandle, result: &Value) {
+    let rows = result
+        .as_array()
+        .or_else(|| result.get("data").and_then(Value::as_array))
+        .or_else(|| {
+            result
+                .get("dailyWorkspaceUsageCounts")
+                .and_then(Value::as_array)
+        })
+        .or_else(|| result.get("daily_usage_buckets").and_then(Value::as_array));
+    let Some(rows) = rows else {
+        set_token_fetch_error(
+            app,
+            "Codex Token history response did not contain daily usage records".into(),
+        );
+        return;
+    };
+
+    let buckets: Vec<TokenDailyBucket> = rows
+        .iter()
+        .filter_map(|row| {
+            let start_date = row
+                .get("date")
+                .or_else(|| row.get("startDate"))
+                .or_else(|| row.get("start_date"))
+                .and_then(Value::as_str)?;
+            let totals = row.get("totals").unwrap_or(row);
+            let input_tokens = sum_counts(
+                token_count(
+                    totals
+                        .get("uncached_text_input_tokens")
+                        .or_else(|| totals.get("input_tokens")),
+                ),
+                token_count(totals.get("cached_text_input_tokens")),
+            );
+            let output_tokens = token_count(
+                totals
+                    .get("text_output_tokens")
+                    .or_else(|| totals.get("output_tokens")),
+            );
+            let tokens = token_count(
+                totals
+                    .get("text_total_tokens")
+                    .or_else(|| totals.get("total_tokens"))
+                    .or_else(|| row.get("tokens"))
+                    .or_else(|| row.get("counts")),
+            )
+            .or_else(|| match (input_tokens, output_tokens) {
+                (Some(input), Some(output)) => Some(input.saturating_add(output)),
+                _ => None,
+            })?;
+            Some(TokenDailyBucket {
+                start_date: start_date.to_owned(),
+                tokens,
+                input_tokens,
+                output_tokens,
+                data_source: "chatgpt.com/backend-api/wham/analytics/daily-workspace-usage-counts"
+                    .into(),
+            })
+        })
+        .collect();
+
+    if !rows.is_empty() && buckets.is_empty() {
+        set_token_fetch_error(
+            app,
+            "Codex Token history response did not contain usable daily token counts".into(),
+        );
+        return;
+    }
+
     let Some(state) = app.try_state::<AppState>() else {
         return;
     };
     let Ok(mut statistics) = state.statistics.lock() else {
         return;
     };
-    let summary = result.get("summary").unwrap_or(&Value::Null);
-    let current = &mut statistics.token_usage.summary;
-    if let Some(value) = summary.get("lifetimeTokens").and_then(Value::as_i64) {
-        current.lifetime_tokens = Some(value);
-    }
-    if let Some(value) = summary.get("peakDailyTokens").and_then(Value::as_i64) {
-        current.peak_daily_tokens = Some(value);
-    }
-    if let Some(value) = summary.get("longestRunningTurnSec").and_then(Value::as_i64) {
-        current.longest_running_turn_sec = Some(value);
-    }
-    if let Some(value) = summary.get("currentStreakDays").and_then(Value::as_i64) {
-        current.current_streak_days = Some(value);
-    }
-    if let Some(value) = summary.get("longestStreakDays").and_then(Value::as_i64) {
-        current.longest_streak_days = Some(value);
-    }
-    if let Some(buckets) = result.get("dailyUsageBuckets").and_then(Value::as_array) {
-        for bucket in buckets {
-            let Some(start_date) = bucket.get("startDate").and_then(Value::as_str) else {
-                continue;
-            };
-            let Some(tokens) = bucket.get("tokens").and_then(Value::as_i64) else {
-                continue;
-            };
-            let daily = TokenDailyBucket {
-                start_date: start_date.to_owned(),
-                tokens,
-                data_source: "codex-app-server/account/usage/read".into(),
-            };
-            if let Some(existing) = statistics
-                .token_usage
-                .daily_usage_buckets
-                .iter_mut()
-                .find(|existing| existing.start_date == daily.start_date)
-            {
-                *existing = daily;
-            } else {
-                statistics.token_usage.daily_usage_buckets.push(daily);
-            }
-        }
-        statistics
-            .token_usage
-            .daily_usage_buckets
-            .sort_by(|left, right| left.start_date.cmp(&right.start_date));
-    }
+    let total_tokens = buckets
+        .iter()
+        .map(|bucket| bucket.tokens)
+        .fold(0_i64, i64::saturating_add);
+    let peak_daily_tokens = buckets
+        .iter()
+        .map(|bucket| bucket.tokens)
+        .max()
+        .unwrap_or(0);
+    statistics.token_usage.summary.lifetime_tokens = Some(total_tokens);
+    statistics.token_usage.summary.input_tokens =
+        sum_bucket_counts(&buckets, |bucket| bucket.input_tokens);
+    statistics.token_usage.summary.output_tokens =
+        sum_bucket_counts(&buckets, |bucket| bucket.output_tokens);
+    statistics.token_usage.summary.peak_daily_tokens = Some(peak_daily_tokens);
+    statistics.token_usage.summary.longest_running_turn_sec = None;
+    statistics.token_usage.summary.current_streak_days = None;
+    statistics.token_usage.summary.longest_streak_days = None;
+    statistics.token_usage.daily_usage_buckets = buckets;
+    statistics
+        .token_usage
+        .daily_usage_buckets
+        .sort_by(|left, right| left.start_date.cmp(&right.start_date));
     statistics.token_usage.updated_at = Some(now_epoch_millis());
     statistics.token_error = None;
     statistics.token_fetch_pending = false;
@@ -599,6 +846,24 @@ fn update_token_usage(app: &AppHandle, result: &Value) {
     drop(statistics);
     save_token_usage(app, &history);
     publish_statistics(app);
+}
+
+fn sum_counts(first: Option<i64>, second: Option<i64>) -> Option<i64> {
+    match (first, second) {
+        (Some(first), Some(second)) => Some(first.saturating_add(second)),
+        (Some(count), None) | (None, Some(count)) => Some(count),
+        (None, None) => None,
+    }
+}
+
+fn run_token_usage_worker(app: AppHandle, refresh: Receiver<()>) {
+    while refresh.recv().is_ok() {
+        while refresh.try_recv().is_ok() {}
+        match quota_api::fetch_token_usage(3650) {
+            Ok(result) => update_token_usage(&app, &result),
+            Err(error) => set_token_fetch_error(&app, error),
+        }
+    }
 }
 
 #[tauri::command]
@@ -652,6 +917,7 @@ async fn consume_reset_card(
     .map_err(|error| error.to_string())?;
 
     if matches!(result.as_deref(), Ok("reset" | "alreadyRedeemed")) {
+        let _ = state.quota_refresh_tx.send(());
         let _ = state.refresh_tx.send(());
     }
     result
@@ -1729,16 +1995,7 @@ fn plan_name_from_account(account: &Value) -> Option<String> {
         .and_then(|account| account.get("planType"))
         .or_else(|| account.get("planType"))
         .and_then(Value::as_str)?;
-    let normalized_plan = plan.to_ascii_lowercase();
-    let normalized = match normalized_plan.as_str() {
-        "free" => "Free".to_owned(),
-        "plus" => "Plus".to_owned(),
-        "pro" => "Pro".to_owned(),
-        "team" | "business" => "Team".to_owned(),
-        "enterprise" => "Enterprise".to_owned(),
-        other => other.to_owned(),
-    };
-    Some(format!("ChatGPT {normalized}"))
+    Some(plan_name_from_type(plan))
 }
 
 fn fast_mode_enabled_from_config(result: &Value) -> Option<bool> {
@@ -1786,18 +2043,6 @@ fn read_rate_limits(
     Ok(())
 }
 
-fn read_token_usage(
-    writer: &mut BufWriter<ChildStdin>,
-    next_id: &mut u64,
-    pending_id: &mut Option<u64>,
-) -> Result<(), String> {
-    let id = *next_id;
-    *next_id += 1;
-    send_rpc(writer, id, "account/usage/read", json!({}))?;
-    *pending_id = Some(id);
-    Ok(())
-}
-
 fn terminate_child(child: &Arc<Mutex<Child>>) {
     if let Ok(mut child) = child.lock() {
         if child.try_wait().ok().flatten().is_none() {
@@ -1810,7 +2055,6 @@ fn terminate_child(child: &Arc<Mutex<Child>>) {
 fn connect_app_server(
     app: &AppHandle,
     refresh: &Receiver<()>,
-    token_refresh: &Receiver<()>,
     consume_reset: &Receiver<ConsumeResetCardRequest>,
 ) -> Result<(), String> {
     let mut spawned: Child = codex_command(app)
@@ -1865,8 +2109,7 @@ fn connect_app_server(
         if let Some(plan_name) = plan_name_from_account(&account) {
             snapshot.plan_name = plan_name;
         }
-        publish_usage(app, snapshot.clone());
-        record_quota_sample(app, &snapshot);
+        publish_app_server_quota(app, snapshot);
 
         let mut next_id = 4_u64;
         let mut pending_config = Some(next_id);
@@ -1874,7 +2117,6 @@ fn connect_app_server(
         next_id += 1;
         let mut config_read_supported = true;
         let mut pending_usage = None;
-        let mut pending_token_usage = None;
         let mut pending_reset_consumptions: HashMap<
             u64,
             (Sender<Result<String, String>>, ActiveResetCardGuard),
@@ -1904,14 +2146,6 @@ fn connect_app_server(
                 if pending_usage.is_none() {
                     read_rate_limits(&mut writer, &mut next_id, &mut pending_usage)?;
                 }
-            }
-
-            let mut should_read_token_usage = false;
-            while token_refresh.try_recv().is_ok() {
-                should_read_token_usage = true;
-            }
-            if should_read_token_usage && pending_token_usage.is_none() {
-                read_token_usage(&mut writer, &mut next_id, &mut pending_token_usage)?;
             }
 
             match messages.recv_timeout(Duration::from_millis(250)) {
@@ -1982,29 +2216,9 @@ fn connect_app_server(
                             let current = current_snapshot(app);
                             let mut snapshot = parse_rate_limits(result, &current.plan_name);
                             snapshot.fast_mode_enabled = current.fast_mode_enabled;
-                            publish_usage(app, snapshot.clone());
-                            record_quota_sample(app, &snapshot);
+                            publish_app_server_quota(app, snapshot);
                         } else if let Some(error) = message.get("error") {
                             eprintln!("Codex rate limit read failed: {error}");
-                        }
-                    } else if pending_token_usage == Some(id) {
-                        pending_token_usage = None;
-                        if let Some(result) = message.get("result") {
-                            update_token_usage(app, result);
-                        } else if let Some(error) = message.get("error") {
-                            set_token_fetch_error(
-                                app,
-                                error
-                                    .get("message")
-                                    .and_then(Value::as_str)
-                                    .unwrap_or("Codex could not read account Token usage")
-                                    .to_owned(),
-                            );
-                        } else {
-                            set_token_fetch_error(
-                                app,
-                                "Codex returned no Token usage response".into(),
-                            );
                         }
                     } else if pending_config == Some(id) {
                         pending_config = None;
@@ -2077,31 +2291,22 @@ fn connect_app_server(
 fn run_usage_worker(
     app: AppHandle,
     refresh: Receiver<()>,
-    token_refresh: Receiver<()>,
     consume_reset: Receiver<ConsumeResetCardRequest>,
 ) {
     loop {
-        match connect_app_server(&app, &refresh, &token_refresh, &consume_reset) {
+        match connect_app_server(&app, &refresh, &consume_reset) {
             Ok(()) => {}
             Err(error) => {
                 eprintln!("CapsuleMeterX App Server connection: {error}");
-                if app
+                let direct_is_ready = app
                     .try_state::<AppState>()
-                    .and_then(|state| {
-                        state
-                            .statistics
-                            .lock()
-                            .ok()
-                            .map(|stats| stats.token_fetch_pending)
-                    })
-                    .unwrap_or(false)
-                {
-                    set_token_fetch_error(&app, error.clone());
+                    .is_some_and(|state| state.direct_quota_ready.load(Ordering::Acquire));
+                if !direct_is_ready {
+                    let mut snapshot = current_snapshot(&app);
+                    snapshot.status = "offline".into();
+                    snapshot.connection_error = Some(error.clone());
+                    publish_usage(&app, snapshot);
                 }
-                let mut snapshot = current_snapshot(&app);
-                snapshot.status = "offline".into();
-                snapshot.connection_error = Some(error.clone());
-                publish_usage(&app, snapshot);
             }
         }
 
@@ -2139,6 +2344,7 @@ fn create_tray(app: &tauri::App) -> tauri::Result<()> {
         .on_menu_event(|app, event| match event.id().as_ref() {
             "refresh" => {
                 if let Some(state) = app.try_state::<AppState>() {
+                    let _ = state.quota_refresh_tx.send(());
                     let _ = state.refresh_tx.send(());
                 }
             }
@@ -2207,6 +2413,7 @@ fn create_tray(app: &tauri::App) -> tauri::Result<()> {
 }
 
 pub fn run() {
+    let (quota_refresh_tx, quota_refresh_rx) = mpsc::channel();
     let (refresh_tx, refresh_rx) = mpsc::channel();
     let (token_refresh_tx, token_refresh_rx) = mpsc::channel();
     let (consume_reset_tx, consume_reset_rx) = mpsc::channel();
@@ -2219,6 +2426,7 @@ pub fn run() {
             None,
         ))
         .manage(AppState::new(
+            quota_refresh_tx,
             refresh_tx,
             token_refresh_tx,
             consume_reset_tx,
@@ -2272,9 +2480,11 @@ pub fn run() {
                 capsule.show()?;
             }
 
-            thread::spawn(move || {
-                run_usage_worker(app_handle, refresh_rx, token_refresh_rx, consume_reset_rx)
-            });
+            thread::spawn(move || run_usage_worker(app_handle, refresh_rx, consume_reset_rx));
+            let app_handle = app.handle().clone();
+            thread::spawn(move || run_direct_quota_worker(app_handle, quota_refresh_rx));
+            let app_handle = app.handle().clone();
+            thread::spawn(move || run_token_usage_worker(app_handle, token_refresh_rx));
             Ok(())
         })
         .on_window_event(|window, event| {
