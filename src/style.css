@@ -289,6 +289,10 @@ body {
   min-height: 360px;
 }
 
+.usage-tooltip--settings-open {
+  min-height: 280px;
+}
+
 .usage-tooltip--tray-preview {
   min-height: 0;
   padding: 12px 14px 10px;
@@ -725,6 +729,164 @@ body {
 .reset-dialog__close:disabled {
   cursor: wait;
   opacity: 0.45;
+}
+
+.settings-dialog-overlay {
+  position: fixed;
+  z-index: 10;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: 10px;
+  background: var(--dialog-scrim);
+  animation: reset-dialog-fade 150ms ease-out both;
+}
+
+.settings-dialog {
+  position: relative;
+  width: min(100%, 350px);
+  padding: 20px;
+  border: 1px solid var(--control-border);
+  border-radius: 18px;
+  background: var(--panel-bg);
+  box-shadow: var(--dialog-shadow);
+  text-align: left;
+}
+
+.settings-dialog__close {
+  position: absolute;
+  top: 8px;
+  right: 10px;
+  display: grid;
+  width: 30px;
+  height: 30px;
+  place-items: center;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: color 140ms ease-out, background-color 140ms ease-out;
+}
+
+.settings-dialog__close:hover {
+  background: var(--card-bg);
+  color: var(--text-primary);
+}
+
+.settings-dialog__close .reset-dialog__close-icon {
+  width: 17px;
+  height: 17px;
+}
+
+.settings-dialog h2 {
+  margin: 0 34px 5px 0;
+  color: var(--text-primary);
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.settings-dialog__description {
+  margin: 0 0 14px;
+  color: var(--text-weak);
+  font-size: 11px;
+  line-height: 16px;
+}
+
+.settings-dialog__options {
+  display: grid;
+  gap: 8px;
+}
+
+.settings-option {
+  display: flex;
+  min-height: 58px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 11px;
+  border: 1px solid var(--divider);
+  border-radius: 11px;
+  background: var(--card-bg);
+  cursor: pointer;
+}
+
+.settings-option__copy {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.settings-option__copy strong {
+  color: var(--text-primary);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.settings-option__copy > span {
+  color: var(--text-weak);
+  font-size: 10px;
+  line-height: 14px;
+}
+
+.settings-option input {
+  position: relative;
+  width: 38px;
+  height: 22px;
+  flex: 0 0 38px;
+  appearance: none;
+  border: 1px solid var(--control-border);
+  border-radius: 999px;
+  background: var(--control-hover);
+  cursor: pointer;
+  transition: background-color 140ms ease-out, border-color 140ms ease-out;
+}
+
+.settings-option input::before {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: var(--text-secondary);
+  content: "";
+  transition: background-color 140ms ease-out, transform 140ms ease-out;
+}
+
+.settings-option input:checked {
+  border-color: var(--usage-accent);
+  background: var(--usage-accent);
+}
+
+.settings-option input:checked::before {
+  background: #fff;
+  transform: translateX(16px);
+}
+
+.settings-option input:focus-visible {
+  outline: 2px solid var(--usage-accent);
+  outline-offset: 2px;
+}
+
+.settings-option input:disabled {
+  cursor: wait;
+  opacity: 0.6;
+}
+
+.settings-dialog__status,
+.settings-dialog__error {
+  margin: 12px 0 0;
+  font-size: 11px;
+  line-height: 16px;
+}
+
+.settings-dialog__status {
+  color: var(--text-secondary);
+}
+
+.settings-dialog__error {
+  color: var(--usage-danger);
 }
 
 .reset-dialog__symbol {
