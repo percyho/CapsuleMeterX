@@ -19,6 +19,10 @@ import type { UsagePaceState } from "../utils/usage";
 type ResetDialogState = "confirm" | "loading" | "success" | "error";
 type Language = "zh" | "en";
 type Theme = "dark" | "light";
+type StartupSettings = {
+  startWithWindows: boolean;
+  startWithChatgpt: boolean;
+};
 
 const TEXT = {
   zh: {
@@ -29,6 +33,16 @@ const TEXT = {
     switchToLight: "切换到明亮主题",
     switchToDark: "切换到暗黑主题",
     statistics: "打开统计",
+    settings: "设置",
+    startupSettings: "启动设置",
+    settingsDescription: "管理 CapsuleMeterX 的启动方式。",
+    startWithWindows: "登录 Windows 时启动",
+    startWithWindowsHint: "登录 Windows 后自动显示胶囊。",
+    startWithChatgpt: "ChatGPT 桌面版启动时显示",
+    startWithChatgptHint: "应用会随 Windows 登录在后台运行，并在检测到 ChatGPT 打开时显示胶囊。",
+    settingsLoading: "正在读取设置…",
+    settingsLoadError: "无法读取启动设置：",
+    settingsSaveError: "无法保存启动设置：",
     offline: "无法连接 Codex App Server",
     fiveHour: "5 小时剩余",
     weekly: "本周剩余",
@@ -87,6 +101,16 @@ const TEXT = {
     switchToLight: "Switch to light theme",
     switchToDark: "Switch to dark theme",
     statistics: "Open statistics",
+    settings: "Settings",
+    startupSettings: "Startup settings",
+    settingsDescription: "Manage how CapsuleMeterX starts.",
+    startWithWindows: "Start when I sign in to Windows",
+    startWithWindowsHint: "Show the capsule after you sign in.",
+    startWithChatgpt: "Show when the ChatGPT desktop app opens",
+    startWithChatgptHint: "CapsuleMeterX runs in the background after sign-in and shows the capsule when ChatGPT opens.",
+    settingsLoading: "Loading settings…",
+    settingsLoadError: "Could not load startup settings: ",
+    settingsSaveError: "Could not save startup settings: ",
     offline: "Unable to connect to Codex App Server",
     fiveHour: "5-hour remaining",
     weekly: "Weekly remaining",
@@ -246,6 +270,15 @@ function StatisticsIcon() {
   );
 }
 
+function SettingsIcon() {
+  return (
+    <svg className="usage-tooltip__toolbar-icon" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <path d="M12 8.6a3.4 3.4 0 1 0 0 6.8 3.4 3.4 0 0 0 0-6.8Z" stroke="currentColor" strokeWidth="1.7" />
+      <path d="m19.2 13.9 1.3 1-1.3 2.3-1.6-.6a7.7 7.7 0 0 1-1.7 1l-.2 1.7h-2.7l-.3-1.7a7.7 7.7 0 0 1-1.7-1l-1.6.6-1.3-2.3 1.3-1a7.3 7.3 0 0 1 0-2l-1.3-1 1.3-2.3 1.6.6a7.7 7.7 0 0 1 1.7-1l.3-1.7h2.7l.2 1.7a7.7 7.7 0 0 1 1.7 1l1.6-.6 1.3 2.3-1.3 1a7.3 7.3 0 0 1 0 2Z" transform="translate(-1.4 -1.3)" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
 function SunIcon() {
   return (
     <svg className="usage-tooltip__toolbar-icon" viewBox="0 0 24 24" fill="none" aria-hidden="true">
@@ -343,6 +376,14 @@ export function UsageTooltipWindow() {
   const [viewMode, setViewMode] = useState<"details" | "tray-preview">("details");
   const [selectedCard, setSelectedCard] = useState<ResetCardExpiry | null>(null);
   const [dialogState, setDialogState] = useState<ResetDialogState | null>(null);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [startupSettings, setStartupSettings] = useState<StartupSettings>({
+    startWithWindows: false,
+    startWithChatgpt: false,
+  });
+  const [settingsLoading, setSettingsLoading] = useState(false);
+  const [settingsSaving, setSettingsSaving] = useState(false);
+  const [settingsError, setSettingsError] = useState("");
   const [resetError, setResetError] = useState("");
   const [consumedCardIds, setConsumedCardIds] = useState<string[]>([]);
   const idempotencyKeys = useRef(new Map<string, string>());
@@ -404,10 +445,14 @@ export function UsageTooltipWindow() {
     observer.observe(tooltip);
     resizeTooltip();
     return () => observer.disconnect();
-  }, [viewMode, dialogState]);
+  }, [viewMode, dialogState, settingsOpen]);
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape" && settingsOpen) {
+        setSettingsOpen(false);
+        return;
+      }
       if (event.key === "Escape" && dialogState !== "loading") {
         setDialogState(null);
         setSelectedCard(null);
@@ -416,7 +461,7 @@ export function UsageTooltipWindow() {
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [dialogState]);
+  }, [dialogState, settingsOpen]);
 
   useEffect(() => {
     const timer = window.setInterval(() => setNow(Date.now()), 30_000);
@@ -514,6 +559,38 @@ export function UsageTooltipWindow() {
     setResetError("");
   };
 
+  const openSettings = async () => {
+    setSettingsOpen(true);
+    setSettingsLoading(true);
+    setSettingsError("");
+    try {
+      const loaded = await invoke<StartupSettings>("get_startup_settings");
+      setStartupSettings(loaded);
+    } catch (error) {
+      setSettingsError(`${text.settingsLoadError}${error instanceof Error ? error.message : String(error)}`);
+    } finally {
+      setSettingsLoading(false);
+    }
+  };
+
+  const updateStartupSetting = async (key: keyof StartupSettings, value: boolean) => {
+    if (settingsSaving) return;
+    const previous = startupSettings;
+    const next = { ...previous, [key]: value };
+    setStartupSettings(next);
+    setSettingsSaving(true);
+    setSettingsError("");
+    try {
+      const saved = await invoke<StartupSettings>("set_startup_settings", { settings: next });
+      setStartupSettings(saved);
+    } catch (error) {
+      setStartupSettings(previous);
+      setSettingsError(`${text.settingsSaveError}${error instanceof Error ? error.message : String(error)}`);
+    } finally {
+      setSettingsSaving(false);
+    }
+  };
+
   const closeResetDialog = () => {
     if (dialogState === "loading") return;
     setDialogState(null);
@@ -579,7 +656,7 @@ export function UsageTooltipWindow() {
       }}
     >
       <section
-        className={`usage-tooltip${viewMode === "tray-preview" ? " usage-tooltip--tray-preview" : ""}${dialogState ? " usage-tooltip--dialog-open" : ""}`}
+        className={`usage-tooltip${viewMode === "tray-preview" ? " usage-tooltip--tray-preview" : ""}${dialogState ? " usage-tooltip--dialog-open" : ""}${settingsOpen ? " usage-tooltip--settings-open" : ""}`}
         aria-label={viewMode === "tray-preview" ? text.usagePreview : text.usageDetails}
         ref={tooltipRef}
       >
@@ -622,6 +699,15 @@ export function UsageTooltipWindow() {
                 <span className="usage-tooltip__theme-icon usage-tooltip__theme-icon--sun"><SunIcon /></span>
                 <span className="usage-tooltip__theme-icon usage-tooltip__theme-icon--moon"><MoonIcon /></span>
               </span>
+            </button>
+            <button
+              className="usage-tooltip__toolbar-button"
+              type="button"
+              aria-label={text.settings}
+              title={text.settings}
+              onClick={() => void openSettings()}
+            >
+              <SettingsIcon />
             </button>
           </div>
         </header>
@@ -843,6 +929,56 @@ export function UsageTooltipWindow() {
                   </>
                 )}
               </div>
+            </section>
+          </div>
+        )}
+
+        {viewMode === "details" && settingsOpen && (
+          <div
+            className="settings-dialog-overlay"
+            onClick={(event) => {
+              if (event.target === event.currentTarget) setSettingsOpen(false);
+            }}
+          >
+            <section className="settings-dialog" role="dialog" aria-modal="true" aria-labelledby="settings-dialog-title">
+              <button className="settings-dialog__close" type="button" aria-label={text.close} onClick={() => setSettingsOpen(false)}>
+                <CloseIcon />
+              </button>
+              <h2 id="settings-dialog-title">{text.startupSettings}</h2>
+              <p className="settings-dialog__description">{text.settingsDescription}</p>
+              {settingsLoading ? (
+                <p className="settings-dialog__status">{text.settingsLoading}</p>
+              ) : (
+                <div className="settings-dialog__options">
+                  <label className="settings-option">
+                    <span className="settings-option__copy">
+                      <strong>{text.startWithWindows}</strong>
+                      <span>{text.startWithWindowsHint}</span>
+                    </span>
+                    <input
+                      type="checkbox"
+                      role="switch"
+                      checked={startupSettings.startWithWindows}
+                      disabled={settingsSaving}
+                      onChange={(event) => void updateStartupSetting("startWithWindows", event.currentTarget.checked)}
+                    />
+                  </label>
+                  <label className="settings-option">
+                    <span className="settings-option__copy">
+                      <strong>{text.startWithChatgpt}</strong>
+                      <span>{text.startWithChatgptHint}</span>
+                    </span>
+                    <input
+                      type="checkbox"
+                      role="switch"
+                      checked={startupSettings.startWithChatgpt}
+                      disabled={settingsSaving}
+                      onChange={(event) => void updateStartupSetting("startWithChatgpt", event.currentTarget.checked)}
+                    />
+                  </label>
+                </div>
+              )}
+              {settingsError && <p className="settings-dialog__error" role="alert">{settingsError}</p>}
             </section>
           </div>
         )}
