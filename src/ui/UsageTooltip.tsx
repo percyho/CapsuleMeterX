@@ -1,836 +1,73 @@
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
-import { flushSync } from "react-dom";
-import { invoke, isTauri } from "@tauri-apps/api/core";
-import { emit, listen } from "@tauri-apps/api/event";
-import { useUsage } from "../hooks/useUsage";
-import type { ResetCardExpiry, UsageWindow } from "../types/usage";
-import {
-  remainingLabel,
-  resetCountdown,
-  resetCardExpiryCountdown,
-  resetClockLabel,
-  usageColor,
-  usagePaceColor,
-  usagePaceState,
-  weeklyResetLabel,
-} from "../utils/usage";
-import type { UsagePaceState } from "../utils/usage";
+YªçŠx-®éÜj×¢ëiºÚ+Š§j[h‘éÜ¢éí×^7İ:-jZ.¶›­–)Ş³V–×÷'B²W6TVffV7BÂW6TÆ–÷WDVffV7BÂW6U&VbÂW6U7FFRÒg&öÒ'&V7B#°Ğ¦–×÷'B²fÇW6…7–æ2Òg&öÒ'&V7BÖFöÒ#°Ğ¦–×÷'B²–çfö¶RÂ—5FW&’Òg&öÒ$FW&’Ö2ö’ö6÷&R#°Ğ¦–×÷'B²VÖ—BÂÆ—7FVâÒg&öÒ$FW&’Ö2ö’öWfVçB#°Ğ¦–×÷'B²W6UW6vRÒg&öÒ"ââö†öö·2÷W6UW6vR#°Ğ¦–×÷'BG—R²&W6WD6&DW‡—'’ÂW6vUv–æF÷rÒg&öÒ"ââ÷G—W2÷W6vR#°Ğ¦–×÷'B°Ğ¢&VÖ–æ–ætÆ&VÂÀĞ¢&W6WD6÷VçFF÷vâÀĞ¢&W6WD6&DW‡—'”6÷VçFF÷vâÀĞ¢&W6WD6Æö6´Æ&VÂÀĞ¢W6vT6öÆ÷"ÀĞ¢W6vU6T6öÆ÷"ÀĞ¢W6vU6U7FFRÀĞ¢vVV¶Ç•&W6WDÆ&VÂÀĞ§Òg&öÒ"ââ÷WF–Ç2÷W6vR#°Ğ¦–×÷'BG—R²W6vU6U7FFRÒg&öÒ"ââ÷WF–Ç2÷W6vR#°Ğ Ğ§G—R&W6WDF–Æöu7FFRÒ&6öæf—&Ò"Â&ÆöF–ær"Â'7V66W72"Â&W'&÷"#°Ğ§G—RÆæwVvRÒ'¦‚"Â&Vâ#°Ğ§G—RF†VÖRÒ&F&²"Â&Æ–v‡B#°Ğ Ğ¦6öç7BDU…BÒ°Ğ¢¦ƒ¢°Ğ¢W6vTFWF–Ç3¢.yJ˜xşŠúnh8R"ÀĞ¢W6vU&Wf–Ws¢$67VÆTÖWFW%‚yJ˜xşš(NŠx‚"ÀĞ¢7v—F6…FôVævÆ—6ƒ¢.Xˆ~hÚ.X‹VævÆ—6‚"ÀĞ¢7v—F6…Fô6†–æW6S¢.Xˆ~hÚ.X‹zèKÙ>KŠŞihr"ÀĞ¢7v—F6…FôÆ–v‡C¢.Xˆ~hÚ.X‹iˆîKªîK‹¾š)‚"ÀĞ¢7v—F6…FôF&³¢.Xˆ~hÚ.X‹i©~›¹K‹¾š)‚"ÀĞ¢7FF—7F–73¢.h™>[È{¹şŠê"ÀĞ¢öffÆ–æS¢.izk9^‹ùîhêR6öFW‚6W'fW""ÀĞ¢f—fT†÷W#¢#R[şi{nXšKÙ’"ÀĞ¢vVV¶Ç“¢.iÊÎYXšKÙ’"ÀĞ¢6Tæ÷&ÖÃ¢.khˆ	~˜	ş[ªnjÚ>[‹‚"ÀĞ¢6Tf7C¢.khˆ	~˜	ş[ªnXş[ú²"ÀĞ¢6UfW'”f7C¢.khˆ	~˜	ş[ªn‹ø~[ú²"ÀĞ¢6UVæ¶æ÷vã¢.khˆ	~˜	ş[ªniÊ®yúR"ÀĞ¢æW‡E&W6WC¢.Kˆ¾jÊ˜xŞ{Úâ"ÀĞ¢&W6WD6&G3¢.XšKÙ˜xŞ{ÚîXÚ"ÀĞ¢6&D6÷VçEVæ—C¢.[Ê"ÀĞ¢6&DW‡—'“¢.zk¾iÈiXi{n™{N‹ùXš’"ÀĞ¢&W6WC¢.˜xŞ{Úâ"ÀĞ¢æô6öææV7F–öã¢.‹ùîhêR6öFW‚Yîh˜Şˆ;ŞKÛşyJ˜xŞ{ÚîXÚ"ÀĞ¢W‡—&VD6&C¢.‹ù[Ê˜xŞ{ÚîXÚ[{.‹ø~iÉò"ÀĞ¢Væf–Æ&ÆT6&C¢.{Ë®[	Xúşš¨ÎŠøy¨N˜xŞ{ÚîXÚj~ŠønûÈÎi¨.KˆŞˆ;ŞZèXZKÛşyJ‚"ÀĞ¢æô6&G3¢.i¨.izXúşyJ˜xŞ{ÚîXÚ"ÀĞ¢ÆöF–æt6&G3¢.jÚ>YÊŠû¾Xùn˜xŞ{ÚîXÚKúhş(
+b"ÀĞ¢Væf–Æ&ÆT6&DFWF–Ç3¢.i¨.i{nizk9^Šû¾XùnXÚx˜~Šúnh8^ûÈÎizk9^ZèXZYËhÈ~Zé®XÚx˜~8""ÀĞ¢÷F†W$6&G5Væf–Æ&ÆS¢.X[nKÙXÚx˜~Šúnh8^i¨.KˆŞXúşyJ‚"ÀĞ¢&Wf–Wtf—fT†÷W#¢#V‚"ÀĞ¢&Wf–WuvVV¶Ç“¢.iÊÎY‚"ÀĞ¢&Wf–WtFWF–Ç3¢.x+X{¾iú^yÈ¾Šúnh8R"ÀĞ¢6öæf—&ÕF—FÆS¢.zîŠêNKÛşyJ˜xŞ{ÚîXÚûÉò"ÀĞ¢ÆöF–æuF—FÆS¢.jÚ>YÊKÛşyJ˜xŞ{ÚîXÚ(
+b"ÀĞ¢7V66W75F—FÆS¢.˜xŞ{Úîh‰X©ò"ÀĞ¢W'&÷%F—FÆS¢.˜xŞ{ÚîZK‹JR"ÀĞ¢6öæf—&ÔÖW76vS¢.zîZé®KÛşyJ‹ù[Ê˜xŞ{ÚîXÚY	~ûÉşjÚNi8ŞKÙÎXúşˆ;Şizk9^i*N™H8""ÀĞ¢ÆöF–ætÖW76vS¢.Šû~zˆŞX	ûÈÎjÚ>YÊzØ[èR6öFW‚zîŠêN˜xŞ{Úî{¹>iéÎ8""ÀĞ¢7V66W74ÖW76vS¢$6öFW‚[{.zîŠêN˜xŞ{ÚîZèÎh‰ûÈÎjÚ>YÊX‹~ikyJ˜xş8""ÀĞ¢6&E&VÖ–æ–æs¢.˜xŞ{ÚîXÚiÈiXiÉş‹ùXš’"ÀĞ¢6Æ÷6S¢.X[>™zÒ"ÀĞ¢FöæS¢.zîZé¢"ÀĞ¢6æ6VÃ¢.Xùnkh‚"ÀĞ¢&WG'“¢.˜xŞŠùR"ÀĞ¢6öæf—&Õ&W6WC¢.zîŠêN˜xŞ{Úâ"ÀĞ¢W6–æt6&C¢.jÚ>YÊKÛşyJ˜xŞ{ÚîXÚ(
+b"ÀĞ¢æ÷F†–æuFõ&W6WC¢.[Ù>X˜ŞyJ˜xşiz™È˜xŞ{ÚîûÈÎ‹ù[ÊXÚK¸ŞiÊ®KÛşyJ8""ÀĞ¢æô7&VF—C¢.‹Jnh‹~KŠŞk*iÈXúşyJy¨N˜xŞ{ÚîXÚ8""ÀĞ¢Væ6öæf—&ÖVD÷WF6öÖS¢$6öFW‚‹ùNY¹îK¨niÊ®zîŠêNy¨N{¹>iéÎûÉ¢"ÀĞ¢–çfÆ–D6&C¢.˜xŞ{ÚîXÚKúhşiziXûÈÎŠû~X‹~ikyJ˜xşYî˜xŞŠù^8""ÀĞ¢6&D–å&öw&W73¢.‹ù[Ê˜xŞ{ÚîXÚjÚ>YÊZHNynKŠŞûÈÎŠû~zˆŞX	8""ÀĞ¢6W'fW$æ÷E&VG“¢$6öFW‚6W'fW"[	®iÊ®[{º®ûÈÎŠû~zˆŞYî˜xŞŠù^8""ÀĞ¢&W6WEF–ÖVD÷WC¢.zØ[èR6öFW‚zîŠêN˜xŞ{Úî{¹>iéÎ‹h^i{n8.Šû~zˆŞYîX‹~ikyJ˜xşûÈÎXhŞXk>Zé®iŠşY
+n˜xŞŠù^8""ÀĞ¢6W'fW$F—66öææV7FVC¢$6öFW‚6W'fW"‹ùîhê^[{.ijŞ[ÈûÈÎ˜xŞ{Úî{¹>iéÎiÊ®ˆ;ŞzîŠêN8.Šû~X‹~ikyJ˜xşYîXhŞŠù^8""ÀĞ¢W&ÖæVçC¢.kK˜^iÈiX‚"ÀĞ¢W‡—'•Væ¶æ÷vã¢.iÈiXiÉşiÊ®yúR"ÀĞ¢Væ¶æ÷vã¢.iÊ®yúR"ÀĞ¢W‡—&VC¢.[{.‹ø~iÉò"ÀĞ¢VæFW$öæTÖ–çWFS¢.[	K¨âXˆn™)ò"ÀĞ¢ÒÀĞ¢Vã¢°Ğ¢W6vTFWF–Ç3¢%W6vRFWF–Ç2"ÀĞ¢W6vU&Wf–Ws¢$67VÆTÖWFW%‚W6vR&Wf–Wr"ÀĞ¢7v—F6…FôVævÆ—6ƒ¢%7v—F6‚FòVævÆ—6‚"ÀĞ¢7v—F6…Fô6†–æW6S¢%7v—F6‚Fò6†–æW6R"ÀĞ¢7v—F6…FôÆ–v‡C¢%7v—F6‚FòÆ–v‡BF†VÖR"ÀĞ¢7v—F6…FôF&³¢%7v—F6‚FòF&²F†VÖR"ÀĞ¢7FF—7F–73¢$÷Vâ7FF—7F–72"ÀĞ¢öffÆ–æS¢%Væ&ÆRFò6öææV7BFò6öFW‚6W'fW""ÀĞ¢f—fT†÷W#¢#RÖ†÷W"&VÖ–æ–ær"ÀĞ¢vVV¶Ç“¢%vVV¶Ç’&VÖ–æ–ær"ÀĞ¢6Tæ÷&ÖÃ¢%W6vR6S¢æ÷&ÖÂ"ÀĞ¢6Tf7C¢%W6vR6S¢f7B"ÀĞ¢6UfW'”f7C¢%W6vR6S¢fW'’f7B"ÀĞ¢6UVæ¶æ÷vã¢%W6vR6RVæ¶æ÷vâ"ÀĞ¢æW‡E&W6WC¢$æW‡B&W6WB"ÀĞ¢&W6WD6&G3¢$f–Æ&ÆR&W6WB6&G2"ÀĞ¢6&D6÷VçEVæ—C¢&6&G2"ÀĞ¢6&DW‡—'“¢$W‡—&W2–â"ÀĞ¢&W6WC¢%&W6WB"ÀĞ¢æô6öææV7F–öã¢$6öææV7BFò6öFW‚FòW6R&W6WB6&G2"ÀĞ¢W‡—&VD6&C¢%F†—2&W6WB6&B†2W‡—&VB"ÀĞ¢Væf–Æ&ÆT6&C¢$fW&–f–&ÆR&W6WBÖ6&B”B—2Væf–Æ&ÆR"ÀĞ¢æô6&G3¢$æò&W6WB6&G2f–Æ&ÆR"ÀĞ¢ÆöF–æt6&G3¢$ÆöF–ær&W6WBÖ6&B–æf÷&ÖF–öî(
+b"ÀĞ¢Væf–Æ&ÆT6&DFWF–Ç3¢$6&BFWF–Ç2&RVæf–Æ&ÆRÂ6òæò6&B6â&R6VÆV7FVB6fVÇ’â"ÀĞ¢÷F†W$6&G5Væf–Æ&ÆS¢$FWF–Ç2f÷"6öÖR6&G2&RVæf–Æ&ÆR"ÀĞ¢&Wf–Wtf—fT†÷W#¢#V‚"ÀĞ¢&Wf–WuvVV¶Ç“¢%vVV²"ÀĞ¢&Wf–WtFWF–Ç3¢%f–WrFWF–Ç2"ÀĞ¢6öæf—&ÕF—FÆS¢%W6RF†—2&W6WB6&Cò"ÀĞ¢ÆöF–æuF—FÆS¢%W6–ær&W6WB6&N(
+b"ÀĞ¢7V66W75F—FÆS¢%&W6WB7V66W76gVÂ"ÀĞ¢W'&÷%F—FÆS¢%&W6WBf–ÆVB"ÀĞ¢6öæf—&ÔÖW76vS¢$&R–÷R7W&R–÷RvçBFòW6RF†—2&W6WB6&CòF†—27F–öâÖ’æ÷B&R&WfW'6–&ÆRâ"ÀĞ¢ÆöF–ætÖW76vS¢%ÆV6Rv—Bv†–ÆR6öFW‚6öæf—&×2F†R&W6WBâ"ÀĞ¢7V66W74ÖW76vS¢$6öFW‚6öæf—&ÖVBF†R&W6WBâW6vR—2&V–ær&Vg&W6†VBâ"ÀĞ¢6&E&VÖ–æ–æs¢$6&BW‡—&W2–â"ÀĞ¢6Æ÷6S¢$6Æ÷6R"ÀĞ¢FöæS¢$FöæR"ÀĞ¢6æ6VÃ¢$6æ6VÂ"ÀĞ¢&WG'“¢%&WG'’"ÀĞ¢6öæf—&Õ&W6WC¢$6öæf—&Ò&W6WB"ÀĞ¢W6–æt6&C¢%W6–ær&W6WB6&N(
+b"ÀĞ¢æ÷F†–æuFõ&W6WC¢%F†W&R—2æòW6vRFò&W6WBâF†—26&Bv2æ÷BW6VBâ"ÀĞ¢æô7&VF—C¢%F†W&R&Ræòf–Æ&ÆR&W6WB6&G2öâF†—266÷VçBâ"ÀĞ¢Væ6öæf—&ÖVD÷WF6öÖS¢$6öFW‚&WGW&æVBâVæ6öæf—&ÖVB&W7VÇC¢"ÀĞ¢–çfÆ–D6&C¢%&W6WBÖ6&BFWF–Ç2&R–çfÆ–Bâ&Vg&W6‚W6vRæBG'’v–ââ"ÀĞ¢6&D–å&öw&W73¢%F†—2&W6WB6&B—2Ç&VG’&V–ær&ö6W76VBâÆV6Rv—Bâ"ÀĞ¢6W'fW$æ÷E&VG“¢$6öFW‚6W'fW"—2æ÷B&VG’âÆV6RG'’v–âÆFW"â"ÀĞ¢&W6WEF–ÖVD÷WC¢%F–ÖVB÷WBv—F–ærf÷"6öFW‚Fò6öæf—&ÒF†R&W6WBâ&Vg&W6‚W6vR&Vf÷&R&WG'––ærâ"ÀĞ¢6W'fW$F—66öææV7FVC¢$6öFW‚6W'fW"F—66öææV7FVB&Vf÷&R6öæf—&Ö–ærF†R&W6WBâ&Vg&W6‚W6vRæBG'’v–ââ"ÀĞ¢W&ÖæVçC¢$æWfW"W‡—&W2"ÀĞ¢W‡—'•Væ¶æ÷vã¢$W‡—'’Væ¶æ÷vâ"ÀĞ¢Væ¶æ÷vã¢%Væ¶æ÷vâ"ÀĞ¢W‡—&VC¢$W‡—&VB"ÀĞ¢VæFW$öæTÖ–çWFS¢$ÆW72F†âÖ–çWFR"ÀĞ¢ÒÀĞ§Ò26öç7C°Ğ Ğ¦gVæ7F–öâ7F÷&VE&VfW&Væ6R†¶W“¢7G&–ær“¢7G&–ærÂçVÆÂ°Ğ¢G'’°Ğ¢&WGW&âv–æF÷ræÆö6Å7F÷&vRævWD—FVÒ†¶W’“°Ğ¢Ò6F6‚°Ğ¢&WGW&âçVÆÃ°Ğ¢ĞĞ§ĞĞ Ğ¦gVæ7F–öâÆö6Æ—¦U&W6WDW'&÷"†W'&÷#¢7G&–ærÂÆæwVvS¢ÆæwVvR“¢7G&–ær°Ğ¢–b†ÆæwVvRÓÓÒ'¦‚"’&WGW&âW'&÷#°Ğ¢6öç7B¶æ÷väW'&÷'3¢&V6÷&CÇ7G&–ærÂ7G&–æsâÒ°Ğ¢µDU…Bç¦‚æ–çfÆ–D6&EÓ¢DU…BæVâæ–çfÆ–D6&BÀĞ¢µDU…Bç¦‚æ6&D–å&öw&W75Ó¢DU…BæVâæ6&D–å&öw&W72ÀĞ¢µDU…Bç¦‚ç6W'fW$æ÷E&VG•Ó¢DU…BæVâç6W'fW$æ÷E&VG’ÀĞ¢µDU…Bç¦‚ç&W6WEF–ÖVD÷WEÓ¢DU…BæVâç&W6WEF–ÖVD÷WBÀĞ¢µDU…Bç¦‚ç6W'fW$F—66öææV7FVEÓ¢DU…BæVâç6W'fW$F—66öææV7FVBÀĞ¢Ó°Ğ¢&WGW&â¶æ÷väW'&÷'5¶W'&÷%ÒóòW'&÷#°Ğ§ĞĞ Ğ¦gVæ7F–öâW6vU6TÆ&VÂ‡7FFS¢W6vU6U7FFRÂÆæwVvS¢ÆæwVvR“¢7G&–ær°Ğ¢6öç7BFW‡BÒDU…E¶ÆæwVvUÓ°Ğ¢7v—F6‚‡7FFR’°Ğ¢66R&æ÷&ÖÂ#¢&WGW&âFW‡Bç6Tæ÷&ÖÃ°Ğ¢66R&f7B#¢&WGW&âFW‡Bç6Tf7C°Ğ¢66R'fW'’Öf7B#¢&WGW&âFW‡Bç6UfW'”f7C°Ğ¢FVfVÇC¢&WGW&âFW‡Bç6UVæ¶æ÷vã°Ğ¢ĞĞ§ĞĞ Ğ¦gVæ7F–öâW6vU&–ær‡²v–æF÷rÂÆ&VÂÓ¢²v–æF÷s¢W6vUv–æF÷rÂçVÆÃ²Æ&VÃ¢7G&–ærÒ’°Ğ¢6öç7B&VÖ–æ–ærÒv–æF÷sòç&VÖ–æ–æuW&6VçBóòçVÆÃ°Ğ¢6öç7B&Wf–÷W5&VÖ–æ–ærÒW6U&VcÆçVÖ&W"ÂçVÆÃâ†çVÆÂ“°Ğ¢6öç7B¶†5&V6V—fVEWFFRÂ6WD†5&V6V—fVEWFFUÒÒW6U7FFR†fÇ6R“°Ğ¢6öç7B&F—W2Ò#3°Ğ¢6öç7B6—&7VÖfW&Væ6RÒ"¢ÖF‚å’¢&F—W3°Ğ¢6öç7B&öw&W72Ò&VÖ–æ–ærÓÓÒçVÆÂò¢ÖF‚æÖ‚ƒÂÖF‚æÖ–âƒÂ&VÖ–æ–ær’“°Ğ Ğ¢W6TVffV7B‚‚’Óâ°Ğ¢–b‡&VÖ–æ–ærÓÓÒçVÆÂ’&WGW&ã°Ğ Ğ¢–b‡&Wf–÷W5&VÖ–æ–æræ7W'&VçBÓÓÒçVÆÂ’6WD†5&V6V—fVEWFFR‡G'VR“°Ğ¢&Wf–÷W5&VÖ–æ–æræ7W'&VçBÒ&VÖ–æ–æs°Ğ¢ÒÂ·&VÖ–æ–æuÒ“°Ğ Ğ¢&WGW&â€Ğ¢Ç7fpĞ¢6Æ74æÖSÒ'W6vR×&–ær Ğ¢f–Wt&÷ƒÒ#SBSB Ğ¢&öÆSÒ&–Ör Ğ¢&–ÖÆ&VÃ×¶G¶Æ&VÇÒG·&VÖ–æ–ætÆ&VÂ‡v–æF÷r—ÖĞĞ¢àĞ¢Æ6—&6ÆR6Æ74æÖSÒ'W6vR×&–æuõ÷G&6²"7ƒÒ##r"7“Ò##r"#×·&F—W7ÒóàĞ¢Æ6—&6ÆPĞ¢6Æ74æÖS×¶W6vR×&–æuõ÷&öw&W72G¶†5&V6V—fVEWFFRò"W6vR×&–æuõ÷&öw&W72ÒÖæ–ÖFVB"¢"'ÖĞĞ¢7ƒÒ##r Ğ¢7“Ò##r Ğ¢#×·&F—W7ĞĞ¢7G&ö¶TF6†'&“×¶6—&7VÖfW&Væ6WĞĞ¢7G&ö¶TF6†öfg6WC×¶6—&7VÖfW&Væ6R¢ƒÒ&öw&W72ò—ĞĞ¢7G–ÆS×·²7G&ö¶S¢W6vT6öÆ÷"‡&VÖ–æ–ær’×ĞĞ¢óàĞ¢ÇFW‡@Ğ¢6Æ74æÖSÒ'W6vR×&–æuõöÆ&VÂ Ğ¢ƒÒ##r Ğ¢“Ò##r Ğ¢FW‡Dæ6†÷#Ò&Ö–FFÆR Ğ¢FöÖ–æçD&6VÆ–æSÒ&6VçG&Â Ğ¢7G–ÆS×·²f–ÆÃ¢W6vT6öÆ÷"‡&VÖ–æ–ær’×ĞĞ¢àĞ¢·&VÖ–æ–ærÓÓÒçVÆÂò"ÒÒ"¢G·&VÖ–æ–æwÒVĞĞ¢Â÷FW‡CàĞ¢Â÷7fsàĞ¢“°Ğ§ĞĞ Ğ¦gVæ7F–öâ&W6WD6&D–6öâ‚’°Ğ¢&WGW&â€Ğ¢Ç7fr6Æ74æÖSÒ'&W6WBÖ6&Eõ÷&W6WBÖ–6öâ"f–Wt&÷ƒÒ##B#B"f–ÆÃÒ&æöæR"&–Ö†–FFVãÒ'G'VR#àĞ¢ÇF€Ğ¢CÒ$ÓBãRFƒT""#ãRgc2ã&"ã‚"ã‚Rãec†""Ó"&‚ÓV""Ó"Ó'bÓ2ã&"ã‚"ã‚ÓRãecf"""Ó%¢ Ğ¢7G&ö¶SÒ&7W'&VçD6öÆ÷" Ğ¢7G&ö¶Uv–GFƒÒ#ã‚ Ğ¢7G&ö¶TÆ–æV6Ò'&÷VæB Ğ¢7G&ö¶TÆ–æV¦ö–ãÒ'&÷VæB Ğ¢óàĞ¢ÇF‚CÒ$Ó’&ƒb"7G&ö¶SÒ'f"‚Ò×W6vRÖ66VçB’"7G&ö¶Uv–GFƒÒ#"ã""7G&ö¶TÆ–æV6Ò'&÷VæB"óàĞ¢Â÷7fsàĞ¢“°Ğ§ĞĞ Ğ¦gVæ7F–öâÆæwVvW4–6öâ‚’°Ğ¢&WGW&â€Ğ¢Ç7fr6Æ74æÖSÒ'W6vR×FööÇF—õ÷FööÆ&"Ö–6öâ"f–Wt&÷ƒÒ##B#B"f–ÆÃÒ&æöæR"&–Ö†–FFVãÒ'G'VR#àĞ¢ÇF‚CÒ$Ó2ãRVƒ”Ó‚7c&ÓBãR3Bã"Ó2rãbÓrãR’ãDÓRãR†3ã2"ã‚2ã‚RãbãBbãDÓ2ãR#ÃBÓBÒÓbãRÓ6ƒR"7G&ö¶SÒ&7W'&VçD6öÆ÷""7G&ö¶Uv–GFƒÒ#ãr"7G&ö¶TÆ–æV6Ò'&÷VæB"7G&ö¶TÆ–æV¦ö–ãÒ'&÷VæB"óàĞ¢Â÷7fsàĞ¢“°Ğ§ĞĞ Ğ¦gVæ7F–öâ7FF—7F–74–6öâ‚’°Ğ¢&WGW&â€Ğ¢Ç7fr6Æ74æÖSÒ'W6vR×FööÇF—õ÷FööÆ&"Ö–6öâ"f–Wt&÷ƒÒ##B#B"f–ÆÃÒ&æöæR"&–Ö†–FFVãÒ'G'VR#àĞ¢ÇF‚CÒ$Ó27c†ƒ„Ó‚wbÓ6ÓR5cVÓR%c’"7G&ö¶SÒ&7W'&VçD6öÆ÷""7G&ö¶Uv–GFƒÒ#ã‚"7G&ö¶TÆ–æV6Ò'&÷VæB"7G&ö¶TÆ–æV¦ö–ãÒ'&÷VæB"óàĞ¢Â÷7fsàĞ¢“°Ğ§ĞĞ Ğ¦gVæ7F–öâ7Vä–6öâ‚’°Ğ¢&WGW&â€Ğ¢Ç7fr6Æ74æÖSÒ'W6vR×FööÇF—õ÷FööÆ&"Ö–6öâ"f–Wt&÷ƒÒ##B#B"f–ÆÃÒ&æöæR"&–Ö†–FFVãÒ'G'VR#àĞ¢Æ6—&6ÆR7ƒÒ#""7“Ò#""#Ò#B"7G&ö¶SÒ&7W'&VçD6öÆ÷""7G&ö¶Uv–GFƒÒ#ãr"óàĞ¢ÇF‚CÒ$Ó""ãWc&ÓWc&Ó’ãRÓ’ãV‚Ó&ÒÓR‚Ó&Óbã#"Óbãs"ÓãC"ãC$Óbãrrã6ÂÓãC"ãC&Ó2ãCBÓãC"ÓãC$ÓbãrbãrRã#‚Rã#‚"7G&ö¶SÒ&7W'&VçD6öÆ÷""7G&ö¶Uv–GFƒÒ#ãr"7G&ö¶TÆ–æV6Ò'&÷VæB"óàĞ¢Â÷7fsàĞ¢“°Ğ§ĞĞ Ğ¦gVæ7F–öâÖööä–6öâ‚’°Ğ¢&WGW&â€Ğ¢Ç7fr6Æ74æÖSÒ'W6vR×FööÇF—õ÷FööÆ&"Ö–6öâ"f–Wt&÷ƒÒ##B#B"f–ÆÃÒ&æöæR"&–Ö†–FFVãÒ'G'VR#àĞ¢ÇF‚CÒ$Ó#ãBRã$‚ãb‚ãb‚ã‚2ãb‚ã‚‚ã‚#ãBRã%¢"7G&ö¶SÒ&7W'&VçD6öÆ÷""7G&ö¶Uv–GFƒÒ#ãr"7G&ö¶TÆ–æV6Ò'&÷VæB"7G&ö¶TÆ–æV¦ö–ãÒ'&÷VæB"óàĞ¢Â÷7fsàĞ¢“°Ğ§ĞĞ Ğ¦gVæ7F–öâÆöFW$6—&6ÆT–6öâ‡²'WGFöâÒfÇ6RÓ¢²'WGFöãó¢&ööÆVâÒ’°Ğ¢&WGW&â€Ğ¢Ç7fpĞ¢6Æ74æÖS×¶&W6WBÖF–ÆöuõöÆöFW"G¶'WGFöâò"&W6WBÖF–ÆöuõöÆöFW"ÒÖ'WGFöâ"¢"'ÖĞĞ¢f–Wt&÷ƒÒ##B#B Ğ¢f–ÆÃÒ&æöæR Ğ¢&–Ö†–FFVãÒ'G'VR Ğ¢àĞ¢ÇF€Ğ¢CÒ$Ó"& Ğ¢7G&ö¶SÒ&7W'&VçD6öÆ÷" Ğ¢7G&ö¶Uv–GFƒÒ#" Ğ¢7G&ö¶TÆ–æV6Ò'&÷VæB Ğ¢óàĞ¢Â÷7fsàĞ¢“°Ğ§ĞĞ Ğ¦gVæ7F–öâ6†V6´6—&6ÆS$–6öâ‚’°Ğ¢&WGW&â€Ğ¢Ç7fr6Æ74æÖSÒ'&W6WBÖF–Æöuõ÷7FGW2Ö–6öâ"f–Wt&÷ƒÒ##B#B"f–ÆÃÒ&æöæR"&–Ö†–FFVãÒ'G'VR#àĞ¢Æ6—&6ÆR7ƒÒ#""7“Ò#""#Ò#’ãR"7G&ö¶SÒ&7W'&VçD6öÆ÷""7G&ö¶Uv–GFƒÒ#ã‚"óàĞ¢ÇF‚CÒ&Ó‚"ã""ãb"ãbRãbÓRãb"7G&ö¶SÒ&7W'&VçD6öÆ÷""7G&ö¶Uv–GFƒÒ#ã‚"7G&ö¶TÆ–æV6Ò'&÷VæB"7G&ö¶TÆ–æV¦ö–ãÒ'&÷VæB"óàĞ¢Â÷7fsàĞ¢“°Ğ§ĞĞ Ğ¦gVæ7F–öâÆW'D6—&6ÆT–6öâ‚’°Ğ¢&WGW&â€Ğ¢Ç7fr6Æ74æÖSÒ'&W6WBÖF–Æöuõ÷7FGW2Ö–6öâ"f–Wt&÷ƒÒ##B#B"f–ÆÃÒ&æöæR"&–Ö†–FFVãÒ'G'VR#àĞ¢Æ6—&6ÆR7ƒÒ#""7“Ò#""#Ò#’ãR"7G&ö¶SÒ&7W'&VçD6öÆ÷""7G&ö¶Uv–GFƒÒ#ã‚"óàĞ¢ÇF‚CÒ$Ó"‡cBãVÓ2ãV‚ã"7G&ö¶SÒ&7W'&VçD6öÆ÷""7G&ö¶Uv–GFƒÒ#ã‚"7G&ö¶TÆ–æV6Ò'&÷VæB"óàĞ¢Â÷7fsàĞ¢“°Ğ§ĞĞ Ğ¦gVæ7F–öâ6Æ÷6T–6öâ‚’°Ğ¢&WGW&â€Ğ¢Ç7fr6Æ74æÖSÒ'&W6WBÖF–Æöuõö6Æ÷6RÖ–6öâ"f–Wt&÷ƒÒ##B#B"f–ÆÃÒ&æöæR"&–Ö†–FFVãÒ'G'VR#àĞ¢ÇF‚CÒ&Óbb"$Ó‚bb‚"7G&ö¶SÒ&7W'&VçD6öÆ÷""7G&ö¶Uv–GFƒÒ#ã‚"7G&ö¶TÆ–æV6Ò'&÷VæB"óàİøß{h‘éì¶»§q«^t\šXK[X™[^İšY]Ó[ÙHOOH˜^K\™]šY]ÈˆÈ^\ØYÙT™]šY]Èˆ^\ØYÙQ]Z[ßCBˆ™Y^İÛÛ\™YŸCBˆƒBˆXY\ˆÛ\ÜÓ˜[YOH\ØYÙK]ÛÛ\×ÚXY\ˆƒBˆHÛ\ÜÓ˜[YOH\ØYÙK]ÛÛ\×İ]HƒBˆİšY]Ó[ÙHOOH˜^K\™]šY]ÈˆÈØ\İ[SY]\–ˆˆ\ØYÙKœ[“˜[YHÚ]ÔŸCBˆÚOƒBˆ]ˆÛ\ÜÓ˜[YOH\ØYÙK]ÛÛ\×İÛÛ˜\ˆƒBˆ]ÛƒBˆÛ\ÜÓ˜[YOH\ØYÙK]ÛÛ\×İÛÛ˜\‹X]ÛˆƒBˆ\OH˜]ÛˆƒBˆ\šXK[X™[^İ^œİ]\İXÜßCBˆ]O^İ^œİ]\İXÜßCBˆÛÛXÚÏ^Ê
+HOˆÃBˆYˆ
+\Õ]\šJ
+JH›ÚY[›ÚÙJœÚİ×Üİ]\İXÜ×İÚ[™İÈŠNÃBˆ_CBˆƒBˆİ]\İXÜÒXÛÛˆÏƒBˆØ]ÛƒBˆ]ÛƒBˆÛ\ÜÓ˜[YOH\ØYÙK]ÛÛ\×İÛÛ˜\‹X]ÛˆƒBˆ\OH˜]ÛˆƒBˆ\šXK[X™[^Û[™İXYÙHOOHšˆÈ^œİÚ]ÚÑ[™Û\Úˆ^œİÚ]ÚĞÚ[™\Ù_CBˆ]O^Û[™İXYÙHOOHšˆÈ^œİÚ]ÚÑ[™Û\Úˆ^œİÚ]ÚĞÚ[™\Ù_CBˆÛÛXÚÏ^Ê
+HOˆÙ][™İXYÙJ
+İ\œ™[
+HOˆİ\œ™[OOHšˆÈ™[ˆˆˆšŠ_CBˆƒBˆ[™İXYÙ\ÒXÛÛˆÏƒBˆØ]ÛƒBˆ]ÛƒBˆÛ\ÜÓ˜[YOH\ØYÙK]ÛÛ\×İÛÛ˜\‹X]ÛˆƒBˆ\OH˜]ÛˆƒBˆ\šXK[X™[^İ[YHOOH™\šÈˆÈ^œİÚ]ÚÓYÚˆ^œİÚ]ÚÑ\šßCBˆ]O^İ[YHOOH™\šÈˆÈ^œİÚ]ÚÓYÚˆ^œİÚ]ÚÑ\šßCBˆÛÛXÚÏ^İÙÙÛU[Y_CBˆƒBˆÜ[ƒBˆÛ\ÜÓ˜[YO^Ø\ØYÙK]ÛÛ\×İ[YKZXÛÛ‹\İXÚÉİ[YHOOH›YÚˆÈˆ\ØYÙK]ÛÛ\×İ[YKZXÛÛ‹\İXÚËK[YÚˆˆˆŸXCBˆ\šXKZY[HYHƒBˆƒBˆÜ[ˆÛ\ÜÓ˜[YOH\ØYÙK]ÛÛ\×İ[YKZXÛÛˆ\ØYÙK]ÛÛ\×İ[YKZXÛÛ‹K\İ[ˆİ[’XÛÛˆÏÜÜ[ƒBˆÜ[ˆÛ\ÜÓ˜[YOH\ØYÙK]ÛÛ\×İ[YKZXÛÛˆ\ØYÙK]ÛÛ\×İ[YKZXÛÛ‹K[[ÛÛˆ[ÛÛ’XÛÛˆÏÜÜ[ƒBˆÜÜ[ƒBˆØ]ÛƒBˆÙ]ƒBˆÚXY\ƒBˆİšY]Ó[ÙHOOH˜^K\™]šY]ÈˆÈ
+BˆƒBˆ]ˆÛ\ÜÓ˜[YOH˜^K\™]šY]××İ\ØYÙHƒBˆÜ[ˆÛ\ÜÓ˜[YOH˜^K\™]šY]××ÛY]šXÈƒBˆÜ[İ^œ™]šY]Ñš]™Rİ\ŸOÜÜ[ƒBˆİ›Û™ÏÜ™[XZ[š[™ÓX™[
+\ØYÙK™š]™Rİ\Š_OÜİ›Û™ÏƒBˆÜÜ[ƒBˆÜ[ˆÛ\ÜÓ˜[YOH˜^K\™]šY]××ÜÙ\\˜]Üˆˆ\šXKZY[HYH°­ÏÜÜ[ƒBˆÜ[ˆÛ\ÜÓ˜[YOH˜^K\™]šY]××ÛY]šXÈƒBˆÜ[İ^œ™]šY]ÕÙYZÛ_OÜÜ[ƒBˆİ›Û™ÏÜ™[XZ[š[™ÓX™[
+\ØYÙKÙYZÛJ_OÜİ›Û™ÏƒBˆÜÜ[ƒBˆÙ]ƒBˆİ\ØYÙKœİ]\ÈOOH›Ù™›[™Hˆ	‰ˆ
+BˆÛ\ÜÓ˜[YOH˜^K\™]šY]××ÛÙ™›[™HƒBˆİ\ØYÙK˜ÛÛ›™Xİ[Û‘\œ›ÜˆÈ	İ^›Ù™›[™_Nˆ	İ\ØYÙK˜ÛÛ›™Xİ[Û‘\œ›ÜŸXˆ^›Ù™›[™_CBˆÜƒBˆ
+_CBˆ]ÛƒBˆÛ\ÜÓ˜[YOH˜^K\™]šY]××Ù]Z[ËX]ÛˆƒBˆ\OH˜]ÛˆƒBˆÛÛXÚÏ^Ê
+HOˆÃBˆYˆ
+\Õ]\šJ
+JH›ÚY[›ÚÙJœÚİ×İ˜^Wİ\ØYÙWÙ]Z[ÈŠNÃBˆ_CBˆƒBˆİ^œ™]šY]Ñ]Z[ßHÜ[ˆ\šXKZY[HYH¸¡¤ÜÜ[ƒBˆØ]ÛƒBˆÏƒBˆ
+Hˆ
+BˆƒBˆİ\ØYÙKœİ]\ÈOOH›Ù™›[™Hˆ	‰ˆ
+BˆÛ\ÜÓ˜[YOH\ØYÙK]ÛÛ\×ÛÙ™›[™HƒBˆİ\ØYÙK˜ÛÛ›™Xİ[Û‘\œ›ÜˆÈ	İ^›Ù™›[™_Nˆ	İ\ØYÙK˜ÛÛ›™Xİ[Û‘\œ›ÜŸXˆ^›Ù™›[™_CBˆÜƒBˆ
+_CBƒBˆ]ˆÛ\ÜÓ˜[YOH\ØYÙK]ÛÛ\×Ü\š[ÙÈƒBˆ]ˆÛ\ÜÓ˜[YOH\ØYÙK]Ú[™İÈƒBˆ\ØYÙTš[™ÈÚ[™İÏ^İ\ØYÙK™š]™Rİ\ŸHX™[^İ^™š]™Rİ\ŸHÏƒBˆ]ˆÛ\ÜÓ˜[YOH\ØYÙK]Ú[™İ××Üİ[[X\HƒBˆİ›Û™Ïİ^™š]™Rİ\ŸOÜİ›Û™ÏƒBˆÜ[ˆİ[O^ŞÈÛÛÜˆ\ØYÙTXÙPÛÛÜŠš]™Rİ\”XÙUÚ[™İË›İÊH_OƒBˆİ\ØYÙTXÙSX™[
+\ØYÙTXÙTİ]Jš]™Rİ\”XÙUÚ[™İË›İÊK[™İXYÙJ_CBˆÜÜ[ƒBˆÜ[İ^›™^™\Ù]OÜÜ[ƒBˆÙ]ƒBˆÜ[ˆÛ\ÜÓ˜[YOH\ØYÙK]Ú[™İ××İ[YHƒBˆÜ™\Ù]Ûİ[İÛŠ\ØYÙK™š]™Rİ\‹›İÊ_H0­ÈÜ™\Ù]ÛØÚÓX™[
+\ØYÙK™š]™Rİ\Š_CBˆÜÜ[ƒBˆÙ]ƒBˆ]ˆÛ\ÜÓ˜[YOH\ØYÙK]Ú[™İÈƒBˆ\ØYÙTš[™ÈÚ[™İÏ^İ\ØYÙKÙYZÛ_HX™[^İ^ÙYZÛ_HÏƒBˆ]ˆÛ\ÜÓ˜[YOH\ØYÙK]Ú[™İ××Üİ[[X\HƒBˆİ›Û™Ïİ^ÙYZÛ_OÜİ›Û™ÏƒBˆÜ[ˆİ[O^ŞÈÛÛÜˆ\ØYÙTXÙPÛÛÜŠÙYZÛTXÙUÚ[™İË›İÊH_OƒBˆİ\ØYÙTXÙSX™[
+\ØYÙTXÙTİ]JÙYZÛTXÙUÚ[™İË›İÊK[™İXYÙJ_CBˆÜÜ[ƒBˆÜ[İ^›™^™\Ù]OÜÜ[ƒBˆÙ]ƒBˆÜ[ˆÛ\ÜÓ˜[YOH\ØYÙK]Ú[™İ××İ[YHƒBˆİÙYZÛT™\Ù]X™[
+\ØYÙKÙYZÛK[™İXYÙJ_CBˆÜÜ[ƒBˆÙ]ƒBˆÙ]ƒBƒBˆ]ˆÛ\ÜÓ˜[YOHœ™\Ù]XØ\™ÈƒBˆ]ˆÛ\ÜÓ˜[YOHœ™\Ù]XØ\™××ÚXY[™ÈƒBˆİ^œ™\Ù]Ø\™ßOÚƒBˆÜ[ƒBˆÜ™\Ù]Ø\™Ûİ[OOH[BˆÈ‹KHƒBˆˆ[™İXYÙHOOHšƒBˆÈ	Ü™\Ù]Ø\™Ûİ[H	İ^˜Ø\™Ûİ[[š]XBˆˆ	Ü™\Ù]Ø\™Ûİ[H	Ü™\Ù]Ø\™Ûİ[OOHHÈ˜Ø\™ˆˆ^˜Ø\™Ûİ[[š]XCBˆÜÜ[ƒBˆÙ]ƒBƒBˆİš\ÚX›PØ\™Ë›X\
 
-type ResetDialogState = "confirm" | "loading" | "success" | "error";
-type Language = "zh" | "en";
-type Theme = "dark" | "light";
+Ø\™[™^
+HOˆÃBˆÛÛœİ^\HH^\SX™[
+Ø\™›İË[™İXYÙJNÃBˆÛÛœİ^\U^H\[Ùˆ^\HOOHœİš[™ÈˆÈ^\Hˆ^\K›X™[ÃBˆÛÛœİ^\PÛÛÜˆH\[Ùˆ^\HOOHœİš[™ÈˆÈ˜\ŠK]^]ÙXZÊHˆˆ^\K˜ÛÛÜÃBˆÛÛœİ^\™YHØ\™™^\™\Ğ]OOH[	‰ˆØ\™™^\™\Ğ]H›İÈÈLÃBˆÛÛœİØ[”™YY[HH›ÛÛX[ŠBˆØ\™šY	‰ƒBˆØ\™œİ]\ÈOOH˜]˜Z[X›Hˆ	‰ƒBˆØ\™œ™\Ù]\HOOH˜ÛÙ^˜]S[Z]Èˆ	‰ƒBˆ\ØYÙKœİ]\ÈOOH›Û›[™Hˆ	‰ƒBˆY^\™YBˆ
+NÃBˆÛÛœİ\ØX›Y™X\ÛÛˆH\ØYÙKœİ]\ÈOOH›Û›[™HƒBˆÈ^››ĞÛÛ›™Xİ[ÛƒBˆˆ^\™YBˆÈ^™^\™YØ\™BˆˆXØ\™šYØ\™œ™\Ù]\HOOH˜ÛÙ^˜]S[Z]ÈƒBˆÈ^[˜]˜Z[X›PØ\™Bˆˆ[™Yš[™YÃBƒBˆ™]\›ˆ
+Bˆ\XÛCBˆÛ\ÜÓ˜[YO^Ø™\Ù]XØ\™™\Ù]XØ\™KIÚ[™^	HˆOOHÈ˜›YHˆˆš[Û]ŸIØØ[”™YY[HÈˆˆˆˆ™\Ù]XØ\™KY\ØX›YŸXCBˆÙ^O^ØØ\™šYÏÈ™\Ù]XØ\™IÚ[™^XCBˆƒBˆ]ˆÛ\ÜÓ˜[YOHœ™\Ù]XØ\™×ÚXÛÛˆ™\Ù]Ø\™XÛÛˆÏÙ]ƒBˆ]ˆÛ\ÜÓ˜[YOHœ™\Ù]XØ\™×Ù^\HƒBˆÜ[İ^˜Ø\™^\_OÜÜ[ƒBˆİ›Û™Èİ[O^ŞÈÛÛÜˆ^\PÛÛÜˆ_OÙ^\U^OÜİ›Û™ÏƒBˆÙ]ƒBˆ]ÛƒBˆÛ\ÜÓ˜[YOHœ™\Ù]XØ\™×ØXİ[ÛˆƒBˆ\OH˜]ÛˆƒBˆ\ØX›Y^ÈXØ[”™YY[HX[ÙÔİ]HOOH›ØY[™ÈŸCBˆ]O^Ù\ØX›Y™X\ÛÛŸCBˆÛÛXÚÏ^Ê
+HOˆÜ[”™\Ù]X[ÙÊØ\™
+_CBˆƒBˆİ^œ™\Ù]CBˆØ]ÛƒBˆØ\XÛOƒBˆ
+NÃBˆJ_CBƒBˆİš\ÚX›PØ\™Ë›[™İOOH	‰ˆ
+BˆÛ\ÜÓ˜[YOHœ™\Ù]XØ\™××Ù[\HƒBˆÜ™\Ù]Ø\™Ûİ[OOHBˆÈ^››ĞØ\™ÃBˆˆ™\Ù]Ø\™Ûİ[OOH[BˆÈ^›ØY[™ĞØ\™ÃBˆˆ^[˜]˜Z[X›PØ\™]Z[ßCBˆÜƒBˆ
+_CBˆÜ™\Ù]Ø\™Ûİ[OOH[	‰ˆ™\Ù]Ø\™Ûİ[ˆš\ÚX›PØ\™Ë›[™İ	‰ˆ
+BˆÛ\ÜÓ˜[YOHœ™\Ù]XØ\™××Û›İHİ^›İ\Ø\™Õ[˜]˜Z[X›_OÜƒBˆ
+_CBˆÙ]ƒBˆÏƒBˆ
+_CBƒBˆİšY]Ó[ÙHOOH™]Z[Èˆ	‰ˆX[ÙÔİ]H	‰ˆÙ[XİYØ\™	‰ˆ
+Bˆ]ƒBˆÛ\ÜÓ˜[YOHœ™\Ù]YX[ÙË[İ™\›^HƒBˆÛÛXÚÏ^Ê]™[
+HOˆÃBˆYˆ
+]™[\™Ù]OOH]™[˜İ\œ™[\™Ù]
+HÛÜÙT™\Ù]X[ÙÊ
+NÃBˆ_CBˆƒBˆÙXİ[ÛˆÛ\ÜÓ˜[YOHœ™\Ù]YX[ÙÈˆ›ÛOH™X[ÙÈˆ\šXK[[Ù[HYHˆ\šXK[X™[YOHœ™\Ù]YX[ÙË]]HƒBˆÙX[ÙÔİ]HOOH›ØY[™Èˆ	‰ˆ
+Bˆ]ÛˆÛ\ÜÓ˜[YOHœ™\Ù]YX[Ù××ØÛÜÙHˆ\OH˜]Ûˆˆ\šXK[X™[^İ^˜ÛÜÙ_HÛÛXÚÏ^ØÛÜÙT™\Ù]X[ÙßOƒBˆÛÜÙRXÛÛˆÏƒBˆØ]ÛƒBˆ
+_CBˆ]ˆÛ\ÜÓ˜[YO^Ø™\Ù]YX[Ù××ÜŞ[X›Û™\Ù]YX[Ù××ÜŞ[X›ÛKIÙX[ÙÔİ]_XOƒBˆÙX[ÙÔİ]HOOH›ØY[™ÈˆÈ
+BˆØY\Ú\˜ÛRXÛÛˆÏƒBˆ
+HˆX[ÙÔİ]HOOHœİXØÙ\ÜÈˆÈ
+BˆÚXÚĞÚ\˜ÛL’XÛÛˆÏƒBˆ
+HˆX[ÙÔİ]HOOH™\œ›ÜˆˆÈ
+Bˆ[\Ú\˜ÛRXÛÛˆÏƒBˆ
+Hˆ
+Bˆ™\Ù]Ø\™XÛÛˆÏƒBˆ
+_CBˆÙ]ƒBˆˆYHœ™\Ù]YX[ÙË]]HƒBˆÙX[ÙÔİ]HOOH˜ÛÛ™š\›HƒBˆÈ^˜ÛÛ™š\›U]CBˆˆX[ÙÔİ]HOOH›ØY[™ÈƒBˆÈ^›ØY[™Õ]CBˆˆX[ÙÔİ]HOOHœİXØÙ\ÜÈƒBˆÈ^œİXØÙ\ÜÕ]CBˆˆ^™\œ›Ü•]_CBˆÚƒBˆÛ\ÜÓ˜[YOHœ™\Ù]YX[Ù××ÛY\ÜØYÙHˆ›ÛO^ÙX[ÙÔİ]HOOH™\œ›ÜˆˆÈ˜[\ˆˆ[™Yš[™YOƒBˆÙX[ÙÔİ]HOOH˜ÛÛ™š\›HƒBˆÈ^˜ÛÛ™š\›SY\ÜØYÙCBˆˆX[ÙÔİ]HOOH›ØY[™ÈƒBˆÈ^›ØY[™ÓY\ÜØYÙCBˆˆX[ÙÔİ]HOOHœİXØÙ\ÜÈƒBˆÈ^œİXØÙ\ÜÓY\ÜØYÙCBˆˆØØ[^™T™\Ù]\œ›ÜŠ™\Ù]\œ›Ü‹[™İXYÙJ_CBˆÜƒBˆ]ˆÛ\ÜÓ˜[YOHœ™\Ù]YX[Ù××ØØ\™ƒBˆÜ[ˆÛ\ÜÓ˜[YOHœ™\Ù]YX[Ù××ØØ\™ZXÛÛˆ™\Ù]Ø\™XÛÛˆÏÜÜ[ƒBˆÜ[İ^˜Ø\™™[XZ[š[™ßOÜÜ[ƒBˆİ›Û™ÏÙ^\Q^\ÓX™[
+Ù[XİYØ\™›İË[™İXYÙJ_OÜİ›Û™ÏƒBˆÙ]ƒBˆ]ˆÛ\ÜÓ˜[YO^Ø™\Ù]YX[Ù××ØXİ[ÛœÈ™\Ù]YX[Ù××ØXİ[ÛœËKIÙX[ÙÔİ]_XOƒBˆÙX[ÙÔİ]HOOHœİXØÙ\ÜÈˆÈ
+Bˆ]ÛˆÛ\ÜÓ˜[YOHœ™\Ù]YX[Ù××Üš[X\Hˆ\OH˜]ÛˆˆÛÛXÚÏ^ØÛÜÙT™\Ù]X[ÙßOƒBˆİ^™Û™_CBˆØ]ÛƒBˆ
+Hˆ
+BˆƒBˆ]ÛƒBˆÛ\ÜÓ˜[YOHœ™\Ù]YX[Ù××ÜÙXÛÛ™\HƒBˆ\OH˜]ÛˆƒBˆ\ØX›Y^ÙX[ÙÔİ]HOOH›ØY[™ÈŸCBˆÛÛXÚÏ^ØÛÜÙT™\Ù]X[ÙßCBˆƒBˆÛÜÙRXÛÛˆÏƒBˆİ^˜Ø[˜Ù[CBˆØ]ÛƒBˆÙX[ÙÔİ]HOOH›ØY[™Èˆ	‰ˆ
+Bˆ]ÛƒBˆÛ\ÜÓ˜[YOHœ™\Ù]YX[Ù××Üš[X\HƒBˆ\OH˜]ÛˆƒBˆÛÛXÚÏ^Ê
+HOˆ›ÚYÛÛ™š\›T™\Ù]
 
-const TEXT = {
-  zh: {
-    usageDetails: "ç”¨é‡è¯¦æƒ…",
-    usagePreview: "CapsuleMeterX ç”¨é‡é¢„è§ˆ",
-    switchToEnglish: "åˆ‡æ¢åˆ° English",
-    switchToChinese: "åˆ‡æ¢åˆ°ç®€ä½“ä¸­æ–‡",
-    switchToLight: "åˆ‡æ¢åˆ°æ˜äº®ä¸»é¢˜",
-    switchToDark: "åˆ‡æ¢åˆ°æš—é»‘ä¸»é¢˜",
-    statistics: "æ‰“å¼€ç»Ÿè®¡",
-    offline: "æ— æ³•è¿æ¥ Codex App Server",
-    fiveHour: "5 å°æ—¶å‰©ä½™",
-    weekly: "æœ¬å‘¨å‰©ä½™",
-    paceNormal: "æ¶ˆè€—é€Ÿåº¦æ­£å¸¸",
-    paceFast: "æ¶ˆè€—é€Ÿåº¦åå¿«",
-    paceVeryFast: "æ¶ˆè€—é€Ÿåº¦è¿‡å¿«",
-    paceUnknown: "æ¶ˆè€—é€Ÿåº¦æœªçŸ¥",
-    nextReset: "ä¸‹æ¬¡é‡ç½®",
-    resetCards: "å‰©ä½™é‡ç½®å¡",
-    cardCountUnit: "å¼ ",
-    cardExpiry: "ç¦»æœ‰æ•ˆæ—¶é—´è¿˜å‰©",
-    reset: "é‡ç½®",
-    noConnection: "è¿æ¥ Codex åæ‰èƒ½ä½¿ç”¨é‡ç½®å¡",
-    expiredCard: "è¿™å¼ é‡ç½®å¡å·²è¿‡æœŸ",
-    unavailableCard: "ç¼ºå°‘å¯éªŒè¯çš„é‡ç½®å¡æ ‡è¯†ï¼Œæš‚ä¸èƒ½å®‰å…¨ä½¿ç”¨",
-    noCards: "æš‚æ— å¯ç”¨é‡ç½®å¡",
-    loadingCards: "æ­£åœ¨è¯»å–é‡ç½®å¡ä¿¡æ¯â€¦",
-    unavailableCardDetails: "æš‚æ—¶æ— æ³•è¯»å–å¡ç‰‡è¯¦æƒ…ï¼Œæ— æ³•å®‰å…¨åœ°æŒ‡å®šå¡ç‰‡ã€‚",
-    otherCardsUnavailable: "å…¶ä½™å¡ç‰‡è¯¦æƒ…æš‚ä¸å¯ç”¨",
-    previewFiveHour: "5h",
-    previewWeekly: "æœ¬å‘¨",
-    previewDetails: "ç‚¹å‡»æŸ¥çœ‹è¯¦æƒ…",
-    confirmTitle: "ç¡®è®¤ä½¿ç”¨é‡ç½®å¡ï¼Ÿ",
-    loadingTitle: "æ­£åœ¨ä½¿ç”¨é‡ç½®å¡â€¦",
-    successTitle: "é‡ç½®æˆåŠŸ",
-    errorTitle: "é‡ç½®å¤±è´¥",
-    confirmMessage: "ç¡®å®šä½¿ç”¨è¿™å¼ é‡ç½®å¡å—ï¼Ÿæ­¤æ“ä½œå¯èƒ½æ— æ³•æ’¤é”€ã€‚",
-    loadingMessage: "è¯·ç¨å€™ï¼Œæ­£åœ¨ç­‰å¾… Codex ç¡®è®¤é‡ç½®ç»“æœã€‚",
-    successMessage: "Codex å·²ç¡®è®¤é‡ç½®å®Œæˆï¼Œæ­£åœ¨åˆ·æ–°ç”¨é‡ã€‚",
-    cardRemaining: "é‡ç½®å¡æœ‰æ•ˆæœŸè¿˜å‰©",
-    close: "å…³é—­",
-    done: "ç¡®å®š",
-    cancel: "å–æ¶ˆ",
-    retry: "é‡è¯•",
-    confirmReset: "ç¡®è®¤é‡ç½®",
-    usingCard: "æ­£åœ¨ä½¿ç”¨é‡ç½®å¡â€¦",
-    nothingToReset: "å½“å‰ç”¨é‡æ— éœ€é‡ç½®ï¼Œè¿™å¼ å¡ä»æœªä½¿ç”¨ã€‚",
-    noCredit: "è´¦æˆ·ä¸­æ²¡æœ‰å¯ç”¨çš„é‡ç½®å¡ã€‚",
-    unconfirmedOutcome: "Codex è¿”å›äº†æœªç¡®è®¤çš„ç»“æœï¼š",
-    invalidCard: "é‡ç½®å¡ä¿¡æ¯æ— æ•ˆï¼Œè¯·åˆ·æ–°ç”¨é‡åé‡è¯•ã€‚",
-    cardInProgress: "è¿™å¼ é‡ç½®å¡æ­£åœ¨å¤„ç†ä¸­ï¼Œè¯·ç¨å€™ã€‚",
-    serverNotReady: "Codex App Server å°šæœªå°±ç»ªï¼Œè¯·ç¨åé‡è¯•ã€‚",
-    resetTimedOut: "ç­‰å¾… Codex ç¡®è®¤é‡ç½®ç»“æœè¶…æ—¶ã€‚è¯·ç¨ååˆ·æ–°ç”¨é‡ï¼Œå†å†³å®šæ˜¯å¦é‡è¯•ã€‚",
-    serverDisconnected: "Codex App Server è¿æ¥å·²æ–­å¼€ï¼Œé‡ç½®ç»“æœæœªèƒ½ç¡®è®¤ã€‚è¯·åˆ·æ–°ç”¨é‡åå†è¯•ã€‚",
-    permanent: "æ°¸ä¹…æœ‰æ•ˆ",
-    expiryUnknown: "æœ‰æ•ˆæœŸæœªçŸ¥",
-    unknown: "æœªçŸ¥",
-    expired: "å·²è¿‡æœŸ",
-    underOneMinute: "å°‘äº 1 åˆ†é’Ÿ",
-  },
-  en: {
-    usageDetails: "Usage details",
-    usagePreview: "CapsuleMeterX usage preview",
-    switchToEnglish: "Switch to English",
-    switchToChinese: "Switch to Chinese",
-    switchToLight: "Switch to light theme",
-    switchToDark: "Switch to dark theme",
-    statistics: "Open statistics",
-    offline: "Unable to connect to Codex App Server",
-    fiveHour: "5-hour remaining",
-    weekly: "Weekly remaining",
-    paceNormal: "Usage pace: normal",
-    paceFast: "Usage pace: fast",
-    paceVeryFast: "Usage pace: very fast",
-    paceUnknown: "Usage pace unknown",
-    nextReset: "Next reset",
-    resetCards: "Available reset cards",
-    cardCountUnit: "cards",
-    cardExpiry: "Expires in",
-    reset: "Reset",
-    noConnection: "Connect to Codex to use reset cards",
-    expiredCard: "This reset card has expired",
-    unavailableCard: "A verifiable reset-card ID is unavailable",
-    noCards: "No reset cards available",
-    loadingCards: "Loading reset-card informationâ€¦",
-    unavailableCardDetails: "Card details are unavailable, so no card can be selected safely.",
-    otherCardsUnavailable: "Details for some cards are unavailable",
-    previewFiveHour: "5h",
-    previewWeekly: "Week",
-    previewDetails: "View details",
-    confirmTitle: "Use this reset card?",
-    loadingTitle: "Using reset cardâ€¦",
-    successTitle: "Reset successful",
-    errorTitle: "Reset failed",
-    confirmMessage: "Are you sure you want to use this reset card? This action may not be reversible.",
-    loadingMessage: "Please wait while Codex confirms the reset.",
-    successMessage: "Codex confirmed the reset. Usage is being refreshed.",
-    cardRemaining: "Card expires in",
-    close: "Close",
-    done: "Done",
-    cancel: "Cancel",
-    retry: "Retry",
-    confirmReset: "Confirm reset",
-    usingCard: "Using reset cardâ€¦",
-    nothingToReset: "There is no usage to reset. This card was not used.",
-    noCredit: "There are no available reset cards on this account.",
-    unconfirmedOutcome: "Codex returned an unconfirmed result: ",
-    invalidCard: "Reset-card details are invalid. Refresh usage and try again.",
-    cardInProgress: "This reset card is already being processed. Please wait.",
-    serverNotReady: "Codex App Server is not ready. Please try again later.",
-    resetTimedOut: "Timed out waiting for Codex to confirm the reset. Refresh usage before retrying.",
-    serverDisconnected: "Codex App Server disconnected before confirming the reset. Refresh usage and try again.",
-    permanent: "Never expires",
-    expiryUnknown: "Expiry unknown",
-    unknown: "Unknown",
-    expired: "Expired",
-    underOneMinute: "Less than 1 minute",
-  },
-} as const;
-
-function storedPreference(key: string): string | null {
-  try {
-    return window.localStorage.getItem(key);
-  } catch {
-    return null;
-  }
-}
-
-function localizeResetError(error: string, language: Language): string {
-  if (language === "zh") return error;
-  const knownErrors: Record<string, string> = {
-    [TEXT.zh.invalidCard]: TEXT.en.invalidCard,
-    [TEXT.zh.cardInProgress]: TEXT.en.cardInProgress,
-    [TEXT.zh.serverNotReady]: TEXT.en.serverNotReady,
-    [TEXT.zh.resetTimedOut]: TEXT.en.resetTimedOut,
-    [TEXT.zh.serverDisconnected]: TEXT.en.serverDisconnected,
-  };
-  return knownErrors[error] ?? error;
-}
-
-function usagePaceLabel(state: UsagePaceState, language: Language): string {
-  const text = TEXT[language];
-  switch (state) {
-    case "normal": return text.paceNormal;
-    case "fast": return text.paceFast;
-    case "very-fast": return text.paceVeryFast;
-    default: return text.paceUnknown;
-  }
-}
-
-function UsageRing({ window, label }: { window: UsageWindow | null; label: string }) {
-  const remaining = window?.remainingPercent ?? null;
-  const previousRemaining = useRef<number | null>(null);
-  const [hasReceivedUpdate, setHasReceivedUpdate] = useState(false);
-  const radius = 23;
-  const circumference = 2 * Math.PI * radius;
-  const progress = remaining === null ? 0 : Math.max(0, Math.min(100, remaining));
-
-  useEffect(() => {
-    if (remaining === null) return;
-
-    if (previousRemaining.current === null) setHasReceivedUpdate(true);
-    previousRemaining.current = remaining;
-  }, [remaining]);
-
-  return (
-    <svg
-      className="usage-ring"
-      viewBox="0 0 54 54"
-      role="img"
-      aria-label={`${label} ${remainingLabel(window)}`}
-    >
-      <circle className="usage-ring__track" cx="27" cy="27" r={radius} />
-      <circle
-        className={`usage-ring__progress${hasReceivedUpdate ? " usage-ring__progress--animated" : ""}`}
-        cx="27"
-        cy="27"
-        r={radius}
-        strokeDasharray={circumference}
-        strokeDashoffset={circumference * (1 - progress / 100)}
-        style={{ stroke: usageColor(remaining) }}
-      />
-      <text
-        className="usage-ring__label"
-        x="27"
-        y="27"
-        textAnchor="middle"
-        dominantBaseline="central"
-        style={{ fill: usageColor(remaining) }}
-      >
-        {remaining === null ? "--" : `${remaining}%`}
-      </text>
-    </svg>
-  );
-}
-
-function ResetCardIcon() {
-  return (
-    <svg className="reset-card__reset-icon" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-      <path
-        d="M4.5 4h15A2 2 0 0 1 21.5 6v3.2a2.8 2.8 0 0 0 0 5.6V18a2 2 0 0 1-2 2h-15a2 2 0 0 1-2-2v-3.2a2.8 2.8 0 0 0 0-5.6V6a2 2 0 0 1 2-2Z"
-        stroke="currentColor"
-        strokeWidth="1.8"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-      <path d="M9 12h6" stroke="var(--usage-accent)" strokeWidth="2.2" strokeLinecap="round" />
-    </svg>
-  );
-}
-
-function LanguagesIcon() {
-  return (
-    <svg className="usage-tooltip__toolbar-icon" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-      <path d="M3.5 5h9M8 3v2m4.5 0c0 4.2-3 7.6-7.5 9.4M5.5 8c1.3 2.8 3.8 5.1 6.4 6.4M13.5 20l4-10 4 10m-6.5-3h5" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" />
-    </svg>
-  );
-}
-
-function StatisticsIcon() {
-  return (
-    <svg className="usage-tooltip__toolbar-icon" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-      <path d="M3 3v18h18M8 17v-3m5 3V5m5 12V9" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
-    </svg>
-  );
-}
-
-function SunIcon() {
-  return (
-    <svg className="usage-tooltip__toolbar-icon" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-      <circle cx="12" cy="12" r="4" stroke="currentColor" strokeWidth="1.7" />
-      <path d="M12 2.5v2m0 15v2m9.5-9.5h-2m-15 0h-2m16.22-6.72-1.42 1.42M6.7 17.3l-1.42 1.42m13.44 0-1.42-1.42M6.7 6.7 5.28 5.28" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" />
-    </svg>
-  );
-}
-
-function MoonIcon() {
-  return (
-    <svg className="usage-tooltip__toolbar-icon" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-      <path d="M20.4 15.2A8.6 8.6 0 0 1 8.8 3.6 8.8 8.8 0 1 0 20.4 15.2Z" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" />
-    </svg>
-  );
-}
-
-function LoaderCircleIcon({ button = false }: { button?: boolean }) {
-  return (
-    <svg
-      className={`reset-dialog__loader${button ? " reset-dialog__loader--button" : ""}`}
-      viewBox="0 0 24 24"
-      fill="none"
-      aria-hidden="true"
-    >
-      <path
-        d="M12 2a10 10 0 1 0 10 10"
-        stroke="currentColor"
-        strokeWidth="2"
-        strokeLinecap="round"
-      />
-    </svg>
-  );
-}
-
-function CheckCircle2Icon() {
-  return (
-    <svg className="reset-dialog__status-icon" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-      <circle cx="12" cy="12" r="9.5" stroke="currentColor" strokeWidth="1.8" />
-      <path d="m8 12.2 2.6 2.6 5.6-5.6" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
-    </svg>
-  );
-}
-
-function AlertCircleIcon() {
-  return (
-    <svg className="reset-dialog__status-icon" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-      <circle cx="12" cy="12" r="9.5" stroke="currentColor" strokeWidth="1.8" />
-      <path d="M12 8v4.5m0 3.5h.01" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
-    </svg>
-  );
-}
-
-function CloseIcon() {
-  return (
-    <svg className="reset-dialog__close-icon" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-      <path d="m6 6 12 12M18 6 6 18" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
-    </svg>
-  );
-}
-
-function expiryLabel(card: ResetCardExpiry, now: number, language: Language) {
-  const text = TEXT[language];
-  if (card.expiresAt === null) {
-    return card.expiryDetailsAvailable ? text.permanent : text.expiryUnknown;
-  }
-  return resetCardExpiryCountdown(card.expiresAt, now, language);
-}
-
-function expiryDaysLabel(card: ResetCardExpiry, now: number, language: Language) {
-  const text = TEXT[language];
-  if (card.expiresAt === null) {
-    return card.expiryDetailsAvailable ? text.permanent : text.unknown;
-  }
-  const seconds = Math.floor(card.expiresAt - now / 1000);
-  if (seconds <= 0) return text.expired;
-  const days = Math.floor(seconds / 86_400);
-  if (days > 0) return language === "zh" ? `${days} å¤©` : `${days} days`;
-  const hours = Math.floor(seconds / 3_600);
-  if (hours > 0) return language === "zh" ? `${hours} å°æ—¶` : `${hours} hours`;
-  const minutes = Math.floor(seconds / 60);
-  if (minutes > 0) return language === "zh" ? `${minutes} åˆ†é’Ÿ` : `${minutes} minutes`;
-  return text.underOneMinute;
-}
-
-export function UsageTooltipWindow() {
-  const usage = useUsage();
-  const [now, setNow] = useState(Date.now());
-  const [language, setLanguage] = useState<Language>(() =>
-    storedPreference("capsulemeter-language") === "en" ? "en" : "zh",
-  );
-  const [theme, setTheme] = useState<Theme>(() =>
-    storedPreference("capsulemeter-theme") === "light" ? "light" : "dark",
-  );
-  const [viewMode, setViewMode] = useState<"details" | "tray-preview">("details");
-  const [selectedCard, setSelectedCard] = useState<ResetCardExpiry | null>(null);
-  const [dialogState, setDialogState] = useState<ResetDialogState | null>(null);
-  const [resetError, setResetError] = useState("");
-  const [consumedCardIds, setConsumedCardIds] = useState<string[]>([]);
-  const idempotencyKeys = useRef(new Map<string, string>());
-  const tooltipRef = useRef<HTMLElement>(null);
-  const themeTransitioning = useRef(false);
-  const themeLeaveCheckTimer = useRef<number | undefined>(undefined);
-  const themeGuardReleaseTimer = useRef<number | undefined>(undefined);
-  const text = TEXT[language];
-  const fiveHourPaceWindow = usage.status === "online" ? usage.fiveHour : null;
-  const weeklyPaceWindow = usage.status === "online" ? usage.weekly : null;
-
-  useLayoutEffect(() => {
-    document.documentElement.dataset.theme = theme;
-    document.documentElement.lang = language === "zh" ? "zh-CN" : "en";
-    try {
-      window.localStorage.setItem("capsulemeter-language", language);
-      window.localStorage.setItem("capsulemeter-theme", theme);
-    } catch {
-      // Preferences still apply for the current window when storage is unavailable.
-    }
-  }, [language, theme]);
-
-  useEffect(() => {
-    let disposed = false;
-    let unlisten: (() => void) | undefined;
-
-    void listen<string>("usage-tooltip-mode", (event) => {
-      setViewMode(event.payload === "tray-preview" ? "tray-preview" : "details");
-    }).then((stopListening) => {
-      if (disposed) stopListening();
-      else unlisten = stopListening;
-    });
-
-    return () => {
-      disposed = true;
-      unlisten?.();
-    };
-  }, []);
-
-  useEffect(() => {
-    if (!isTauri()) return;
-
-    const tooltip = tooltipRef.current;
-    if (!tooltip) return;
-
-    const resizeTooltip = () => {
-      const stagePadding = viewMode === "tray-preview" ? 18 : 8;
-      const stageWidth = tooltip.parentElement?.getBoundingClientRect().width
-        ?? tooltip.getBoundingClientRect().width + 8;
-      const width = Math.ceil(stageWidth);
-      const height = Math.ceil(tooltip.getBoundingClientRect().height + stagePadding);
-      void invoke("resize_usage_tooltip", { width, height }).catch((error) => {
-        console.error("Could not resize usage tooltip", error);
-      });
-    };
-
-    const observer = new ResizeObserver(resizeTooltip);
-    observer.observe(tooltip);
-    resizeTooltip();
-    return () => observer.disconnect();
-  }, [viewMode, dialogState]);
-
-  useEffect(() => {
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape" && dialogState !== "loading") {
-        setDialogState(null);
-        setSelectedCard(null);
-        setResetError("");
-      }
-    };
-    window.addEventListener("keydown", onKeyDown);
-    return () => window.removeEventListener("keydown", onKeyDown);
-  }, [dialogState]);
-
-  useEffect(() => {
-    const timer = window.setInterval(() => setNow(Date.now()), 30_000);
-    return () => window.clearInterval(timer);
-  }, []);
-
-  useEffect(() => () => {
-    window.clearTimeout(themeLeaveCheckTimer.current);
-    window.clearTimeout(themeGuardReleaseTimer.current);
-  }, []);
-
-  useEffect(() => {
-    const listedIds = new Set(usage.resetCards.flatMap((card) => card.id ? [card.id] : []));
-    setConsumedCardIds((current) => current.filter((id) => listedIds.has(id)));
-  }, [usage.resetCards]);
-
-  const consumedStillListed = consumedCardIds.filter((id) =>
-    usage.resetCards.some((card) => card.id === id),
-  );
-  const visibleCards = usage.resetCards.filter((card) =>
-    !card.id || !consumedCardIds.includes(card.id),
-  );
-  const resetCardCount = usage.resetCardsAvailable === null
-    ? null
-    : Math.max(0, usage.resetCardsAvailable - consumedStillListed.length);
-
-  const toggleTheme = () => {
-    const nextTheme: Theme = theme === "dark" ? "light" : "dark";
-    const applyTheme = () => flushSync(() => setTheme(nextTheme));
-    for (const animation of document.getAnimations()) {
-      const effect = animation.effect;
-      if (
-        effect instanceof KeyframeEffect &&
-        (effect.pseudoElement === "::view-transition-old(root)" ||
-          effect.pseudoElement === "::view-transition-new(root)")
-      ) {
-        animation.cancel();
-      }
-    }
-    document.documentElement.dataset.themeTransitionTarget = nextTheme;
-    const protectTooltip = () => {
-      themeTransitioning.current = true;
-      window.clearTimeout(themeGuardReleaseTimer.current);
-      themeGuardReleaseTimer.current = window.setTimeout(() => {
-        themeTransitioning.current = false;
-      }, 80);
-    };
-
-    if (isTauri()) {
-      void invoke("keep_usage_tooltip");
-      void emit("capsulemeter-theme-changed", nextTheme).catch((error) => {
-        console.error("Could not sync CapsuleMeterX theme", error);
-      });
-    }
-    themeTransitioning.current = true;
-    window.clearTimeout(themeLeaveCheckTimer.current);
-    window.clearTimeout(themeGuardReleaseTimer.current);
-
-    if (
-      !window.matchMedia("(prefers-reduced-motion: reduce)").matches &&
-      typeof document.startViewTransition === "function"
-    ) {
-      try {
-        const transition = document.startViewTransition(applyTheme);
-        void transition.finished.then(protectTooltip, protectTooltip);
-        return;
-      } catch {
-        // Fall back to an immediate theme change if a transition is already running.
-      }
-    }
-    applyTheme();
-    themeGuardReleaseTimer.current = window.setTimeout(() => {
-      themeTransitioning.current = false;
-    }, 180);
-  };
-
-  const openResetDialog = (card: ResetCardExpiry) => {
-    setSelectedCard(card);
-    setDialogState("confirm");
-    setResetError("");
-  };
-
-  const closeResetDialog = () => {
-    if (dialogState === "loading") return;
-    setDialogState(null);
-    setSelectedCard(null);
-    setResetError("");
-  };
-
-  const confirmReset = async () => {
-    if (!selectedCard?.id || dialogState === "loading") return;
-
-    const creditId = selectedCard.id;
-    let idempotencyKey = idempotencyKeys.current.get(creditId);
-    if (!idempotencyKey) {
-      idempotencyKey = crypto.randomUUID();
-      idempotencyKeys.current.set(creditId, idempotencyKey);
-    }
-
-    setDialogState("loading");
-    setResetError("");
-    try {
-      const outcome = await invoke<string>("consume_reset_card", {
-        creditId,
-        idempotencyKey,
-      });
-      if (outcome === "reset" || outcome === "alreadyRedeemed") {
-        idempotencyKeys.current.delete(creditId);
-        setConsumedCardIds((current) => current.includes(creditId) ? current : [...current, creditId]);
-        setDialogState("success");
-        return;
-      }
-
-      idempotencyKeys.current.delete(creditId);
-      setResetError(outcome === "nothingToReset"
-        ? text.nothingToReset
-        : outcome === "noCredit"
-          ? text.noCredit
-          : `${text.unconfirmedOutcome}${outcome}`);
-      setDialogState("error");
-    } catch (error) {
-      setResetError(error instanceof Error ? error.message : String(error));
-      setDialogState("error");
-    }
-  };
-
-  return (
-    <main
-      className={`tooltip-stage${viewMode === "tray-preview" ? " tooltip-stage--tray-preview" : ""}`}
-      onMouseEnter={() => {
-        if (isTauri()) void invoke("keep_usage_tooltip");
-      }}
-      onMouseLeave={() => {
-        if (!isTauri()) return;
-        if (themeTransitioning.current) {
-          window.clearTimeout(themeLeaveCheckTimer.current);
-          themeLeaveCheckTimer.current = window.setTimeout(() => {
-            if (!tooltipRef.current?.matches(":hover")) {
-              void invoke("hide_usage_tooltip", { delayMs: 100 });
-            }
-          }, 560);
-          return;
-        }
-        void invoke("hide_usage_tooltip", { delayMs: 100 });
-      }}
-    >
-      <section
-        className={`usage-tooltip${viewMode === "tray-preview" ? " usage-tooltip--tray-preview" : ""}${dialogState ? " usage-tooltip--dialog-open" : ""}`}
-        aria-label={viewMode === "tray-preview" ? text.usagePreview : text.usageDetails}
-        ref={tooltipRef}
-      >
-        <header className="usage-tooltip__header">
-          <h1 className="usage-tooltip__title">
-            {viewMode === "tray-preview" ? "CapsuleMeterX" : usage.planName || "ChatGPT"}
-          </h1>
-          <div className="usage-tooltip__toolbar">
-            <button
-              className="usage-tooltip__toolbar-button"
-              type="button"
-              aria-label={text.statistics}
-              title={text.statistics}
-              onClick={() => {
-                if (isTauri()) void invoke("show_statistics_window");
-              }}
-            >
-              <StatisticsIcon />
-            </button>
-            <button
-              className="usage-tooltip__toolbar-button"
-              type="button"
-              aria-label={language === "zh" ? text.switchToEnglish : text.switchToChinese}
-              title={language === "zh" ? text.switchToEnglish : text.switchToChinese}
-              onClick={() => setLanguage((current) => current === "zh" ? "en" : "zh")}
-            >
-              <LanguagesIcon />
-            </button>
-            <button
-              className="usage-tooltip__toolbar-button"
-              type="button"
-              aria-label={theme === "dark" ? text.switchToLight : text.switchToDark}
-              title={theme === "dark" ? text.switchToLight : text.switchToDark}
-              onClick={toggleTheme}
-            >
-              <span
-                className={`usage-tooltip__theme-icon-stack${theme === "light" ? " usage-tooltip__theme-icon-stack--light" : ""}`}
-                aria-hidden="true"
-              >
-                <span className="usage-tooltip__theme-icon usage-tooltip__theme-icon--sun"><SunIcon /></span>
-                <span className="usage-tooltip__theme-icon usage-tooltip__theme-icon--moon"><MoonIcon /></span>
-              </span>
-            </button>
-          </div>
-        </header>
-        {viewMode === "tray-preview" ? (
-          <>
-            <div className="tray-preview__usage">
-              <span className="tray-preview__metric">
-                <span>{text.previewFiveHour}</span>
-                <strong>{remainingLabel(usage.fiveHour)}</strong>
-              </span>
-              <span className="tray-preview__separator" aria-hidden="true">Â·</span>
-              <span className="tray-preview__metric">
-                <span>{text.previewWeekly}</span>
-                <strong>{remainingLabel(usage.weekly)}</strong>
-              </span>
-            </div>
-            {usage.status === "offline" && (
-              <p className="tray-preview__offline">
-                {usage.connectionError ? `${text.offline}: ${usage.connectionError}` : text.offline}
-              </p>
-            )}
-            <button
-              className="tray-preview__details-button"
-              type="button"
-              onClick={() => {
-                if (isTauri()) void invoke("show_tray_usage_details");
-              }}
-            >
-              {text.previewDetails} <span aria-hidden="true">â†’</span>
-            </button>
-          </>
-        ) : (
-          <>
-            {usage.status === "offline" && (
-              <p className="usage-tooltip__offline">
-                {usage.connectionError ? `${text.offline}: ${usage.connectionError}` : text.offline}
-              </p>
-            )}
-
-            <div className="usage-tooltip__periods">
-              <div className="usage-window">
-                <UsageRing window={usage.fiveHour} label={text.fiveHour} />
-                <div className="usage-window__summary">
-                  <strong>{text.fiveHour}</strong>
-                  <span style={{ color: usagePaceColor(fiveHourPaceWindow, now) }}>
-                    {usagePaceLabel(usagePaceState(fiveHourPaceWindow, now), language)}
-                  </span>
-                  <span>{text.nextReset}</span>
-                </div>
-                <span className="usage-window__time">
-                  {resetCountdown(usage.fiveHour, now)} Â· {resetClockLabel(usage.fiveHour)}
-                </span>
-              </div>
-              <div className="usage-window">
-                <UsageRing window={usage.weekly} label={text.weekly} />
-                <div className="usage-window__summary">
-                  <strong>{text.weekly}</strong>
-                  <span style={{ color: usagePaceColor(weeklyPaceWindow, now) }}>
-                    {usagePaceLabel(usagePaceState(weeklyPaceWindow, now), language)}
-                  </span>
-                  <span>{text.nextReset}</span>
-                </div>
-                <span className="usage-window__time">
-                  {weeklyResetLabel(usage.weekly, language)}
-                </span>
-              </div>
-            </div>
-
-            <div className="reset-cards">
-              <div className="reset-cards__heading">
-                <h2>{text.resetCards}</h2>
-                <span>
-                  {resetCardCount === null
-                    ? "--"
-                    : language === "zh"
-                      ? `${resetCardCount} ${text.cardCountUnit}`
-                      : `${resetCardCount} ${resetCardCount === 1 ? "card" : text.cardCountUnit}`}
-                </span>
-              </div>
-
-              {visibleCards.map((card, index) => {
-                const expiry = expiryLabel(card, now, language);
-                const expiryText = typeof expiry === "string" ? expiry : expiry.label;
-                const expiryColor = typeof expiry === "string" ? "var(--text-weak)" : expiry.color;
-                const expired = card.expiresAt !== null && card.expiresAt <= now / 1000;
-                const canRedeem = Boolean(
-                  card.id &&
-                  card.status === "available" &&
-                  card.resetType === "codexRateLimits" &&
-                  usage.status === "online" &&
-                  !expired,
-                );
-                const disabledReason = usage.status !== "online"
-                  ? text.noConnection
-                  : expired
-                    ? text.expiredCard
-                    : !card.id || card.resetType !== "codexRateLimits"
-                      ? text.unavailableCard
-                      : undefined;
-
-                return (
-                  <article
-                    className={`reset-card reset-card--${index % 2 === 0 ? "blue" : "violet"}${canRedeem ? "" : " reset-card--disabled"}`}
-                    key={card.id ?? `reset-card-${index}`}
-                  >
-                    <div className="reset-card__icon"><ResetCardIcon /></div>
-                    <div className="reset-card__expiry">
-                      <span>{text.cardExpiry}</span>
-                      <strong style={{ color: expiryColor }}>{expiryText}</strong>
-                    </div>
-                    <button
-                      className="reset-card__action"
-                      type="button"
-                      disabled={!canRedeem || dialogState === "loading"}
-                      title={disabledReason}
-                      onClick={() => openResetDialog(card)}
-                    >
-                      {text.reset}
-                    </button>
-                  </article>
-                );
-              })}
-
-              {visibleCards.length === 0 && (
-                <p className="reset-cards__empty">
-                  {resetCardCount === 0
-                    ? text.noCards
-                    : resetCardCount === null
-                      ? text.loadingCards
-                      : text.unavailableCardDetails}
-                </p>
-              )}
-              {resetCardCount !== null && resetCardCount > visibleCards.length && (
-                <p className="reset-cards__note">{text.otherCardsUnavailable}</p>
-              )}
-            </div>
-          </>
-        )}
-
-        {viewMode === "details" && dialogState && selectedCard && (
-          <div
-            className="reset-dialog-overlay"
-            onClick={(event) => {
-              if (event.target === event.currentTarget) closeResetDialog();
-            }}
-          >
-            <section className="reset-dialog" role="dialog" aria-modal="true" aria-labelledby="reset-dialog-title">
-              {dialogState !== "loading" && (
-                <button className="reset-dialog__close" type="button" aria-label={text.close} onClick={closeResetDialog}>
-                  <CloseIcon />
-                </button>
-              )}
-              <div className={`reset-dialog__symbol reset-dialog__symbol--${dialogState}`}>
-                {dialogState === "loading" ? (
-                  <LoaderCircleIcon />
-                ) : dialogState === "success" ? (
-                  <CheckCircle2Icon />
-                ) : dialogState === "error" ? (
-                  <AlertCircleIcon />
-                ) : (
-                  <ResetCardIcon />
-                )}
-              </div>
-              <h2 id="reset-dialog-title">
-                {dialogState === "confirm"
-                  ? text.confirmTitle
-                  : dialogState === "loading"
-                    ? text.loadingTitle
-                    : dialogState === "success"
-                      ? text.successTitle
-                      : text.errorTitle}
-              </h2>
-              <p className="reset-dialog__message" role={dialogState === "error" ? "alert" : undefined}>
-                {dialogState === "confirm"
-                  ? text.confirmMessage
-                  : dialogState === "loading"
-                    ? text.loadingMessage
-                    : dialogState === "success"
-                      ? text.successMessage
-                      : localizeResetError(resetError, language)}
-              </p>
-              <div className="reset-dialog__card">
-                <span className="reset-dialog__card-icon"><ResetCardIcon /></span>
-                <span>{text.cardRemaining}</span>
-                <strong>{expiryDaysLabel(selectedCard, now, language)}</strong>
-              </div>
-              <div className={`reset-dialog__actions reset-dialog__actions--${dialogState}`}>
-                {dialogState === "success" ? (
-                  <button className="reset-dialog__primary" type="button" onClick={closeResetDialog}>
-                    {text.done}
-                  </button>
-                ) : (
-                  <>
-                    <button
-                      className="reset-dialog__secondary"
-                      type="button"
-                      disabled={dialogState === "loading"}
-                      onClick={closeResetDialog}
-                    >
-                      <CloseIcon />
-                      {text.cancel}
-                    </button>
-                    {dialogState !== "loading" && (
-                      <button
-                        className="reset-dialog__primary"
-                        type="button"
-                        onClick={() => void confirmReset()}
-                        disabled={selectedCard.expiresAt !== null && selectedCard.expiresAt <= now / 1000}
-                      >
-                        {dialogState === "error" ? text.retry : text.confirmReset}
-                      </button>
-                    )}
-                    {dialogState === "loading" && (
-                      <button className="reset-dialog__primary" type="button" disabled>
-                        <LoaderCircleIcon button />
-                        {text.usingCard}
-                      </button>
-                    )}
-                  </>
-                )}
-              </div>
-            </section>
-          </div>
-        )}
-      </section>
-    </main>
-  );
-}
+_CBˆ\ØX›Y^ÜÙ[XİYØ\™™^\™\Ğ]OOH[	‰ˆÙ[XİYØ\™™^\™\Ğ]H›İÈÈLCBˆƒBˆÙX[ÙÔİ]HOOH™\œ›ÜˆˆÈ^œ™]Hˆ^˜ÛÛ™š\›T™\Ù]CBˆØ]ÛƒBˆ
+_CBˆÙX[ÙÔİ]HOOH›ØY[™Èˆ	‰ˆ
+Bˆ]ÛˆÛ\ÜÓ˜[YOHœ™\Ù]YX[Ù××Üš[X\Hˆ\OH˜]Ûˆˆ\ØX›YƒBˆØY\Ú\˜ÛRXÛÛˆ]ÛˆÏƒBˆİ^\Ú[™ĞØ\™CBˆØ]ÛƒBˆ
+_CBˆÏƒBˆ
+_CBˆÙ]ƒBˆÜÙXİ[ÛƒBˆÙ]ƒBˆ
+_CBˆÜÙXİ[ÛƒBˆÛXZ[ƒBˆ
+NÃBŸCB

@@ -247,6 +247,8 @@ body {
 }
 
 .usage-tooltip {
+  position: relative;
+  isolation: isolate;
   width: 100%;
   min-height: 146px;
   padding: 14px;
@@ -257,6 +259,30 @@ body {
   backdrop-filter: blur(12px);
   -webkit-backdrop-filter: blur(12px);
   animation: tooltip-enter 120ms ease-out both;
+}
+
+:root[data-theme-transition-fallback] .usage-tooltip::after {
+  position: absolute;
+  z-index: 8;
+  inset: 0;
+  border-radius: inherit;
+  content: "";
+  pointer-events: none;
+  animation: theme-fallback-fade 480ms ease-out both;
+}
+
+@supports (clip-path: circle(1px)) {
+  :root[data-theme-transition-fallback] .usage-tooltip::after {
+    animation: theme-fallback-cover 480ms cubic-bezier(0.75, 0, 0.78, 0.25) both;
+  }
+}
+
+:root[data-theme-transition-fallback="light"] .usage-tooltip::after {
+  background: #191d21;
+}
+
+:root[data-theme-transition-fallback="dark"] .usage-tooltip::after {
+  background: #f7f8fa;
 }
 
 .usage-tooltip--dialog-open {
@@ -968,6 +994,16 @@ body {
     65% { opacity: 1; filter: blur(0); transform: rotate(8deg) scale(1.12); }
     to { opacity: 1; filter: blur(0); transform: rotate(0) scale(1); }
   }
+}
+
+@keyframes theme-fallback-cover {
+  from { clip-path: circle(150vmax at 100% 0%); }
+  to { clip-path: circle(0 at 100% 0%); }
+}
+
+@keyframes theme-fallback-fade {
+  from { opacity: 1; }
+  to { opacity: 0; }
 }
 
 @media (prefers-reduced-motion: reduce) {
