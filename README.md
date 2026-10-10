@@ -25,9 +25,9 @@ CapsuleMeterX 是一个使用 React、TypeScript、Rust 和 Tauri 2 构建的 Wi
 
 ## 数据来源
 
-五小时、周额度和 Token 历史都通过本机 Codex 登录凭据读取：应用从 `CODEX_HOME` 下的 `auth.json`（未设置时为 `%USERPROFILE%\.codex\auth.json`）取出访问令牌和账户 ID，再请求对应的 ChatGPT 用量接口。Token 历史直接请求每日账户 Token 用量接口，因此不依赖 Codex App Server。快速模式和重置卡信息及操作仍通过本机 Codex CLI 启动 Codex App Server 获取；重置卡只有在 App Server 明确确认成功后才会标记为成功。
+应用通过本机 Codex CLI 启动 Codex App Server，并从已登录账户读取可用的用量、套餐和重置卡信息。应用不会模拟或自行估算配额。重置卡操作依赖 App Server 返回的实际卡片标识和操作结果；服务端未确认成功时，应用不会将操作标记为成功。
 
-额度和 Token 历史读取需要本机 Codex CLI 已登录。快速模式和重置卡功能还需要启动 Codex App Server。应用会查找 Codex CLI 的常见安装路径，找不到时尝试从 `PATH` 启动 `codex`。如果 CLI 位于其他位置，可在启动应用前设置：
+默认情况下，应用会查找 Codex CLI 的常见安装路径，找不到时尝试从 `PATH` 启动 `codex`。如果 CLI 位于其他位置，可在启动应用前设置：
 
 ```powershell
 $env:CODEX_CLI_PATH = "C:\path\to\codex.exe"

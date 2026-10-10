@@ -25,9 +25,9 @@ The tray ring color follows the five-hour remaining percentage:
 
 ## Data source
 
-The 5-hour quota, weekly quota, and Token history use local Codex sign-in credentials: CapsuleMeterX reads the access token and account ID from `auth.json` under `CODEX_HOME` (or `%USERPROFILE%\.codex\auth.json` when unset) and requests the corresponding ChatGPT usage endpoints. Token history is fetched directly from the daily account-usage endpoint and does not depend on Codex App Server. Fast-mode state and reset-card details and operations still use Codex App Server launched through the local Codex CLI. A reset card is reported as used only after App Server confirms success.
+The app starts Codex App Server through the local Codex CLI and reads usage, plan, and reset-card data available to the signed-in account. It does not simulate or estimate quota. Reset-card use depends on the actual card identifier and operation result returned by App Server; an unconfirmed result is never reported as success.
 
-Quota and Token-history retrieval require Codex CLI to be signed in locally. Fast-mode state and reset-card features also require Codex App Server. CapsuleMeterX checks a common Codex CLI installation path first and falls back to `codex` on `PATH`. If the executable is elsewhere, set this environment variable before launching the app:
+CapsuleMeterX checks a common Codex CLI installation path first and falls back to `codex` on `PATH`. If the executable is elsewhere, set this environment variable before launching the app:
 
 ```powershell
 $env:CODEX_CLI_PATH = "C:\path\to\codex.exe"

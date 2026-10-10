@@ -1,28 +1,6 @@
 # Changelog
 
-## [0.3.2] - 2026-10-09
-
-### Changed
-
-- Moved the fast-mode lightning indicator between the five-hour and weekly capsule values.
-- Added hover hints to the statistics page icons and controls.
-- Parsed the nested daily Token totals returned by the usage endpoint and displayed its input/output totals.
-
-## [0.3.1] - 2026-10-09
-
-### Changed
-
-- Fetch daily Token history directly from the authenticated usage endpoint, so Token statistics no longer depend on starting Codex App Server.
-
-## [0.3.0] - 2026-10-09
-
-### Added
-
-- Set the NSIS installer and uninstaller icons to the CapsuleMeterX Logo (`src-tauri/icons/icon.ico`).
-
-### Changed
-
-- Read five-hour and weekly quota data from the local Codex authentication file and ChatGPT usage endpoint; keep App Server for Token statistics, fast mode, and reset-card operations.
+## [Unreleased]
 
 ## [0.2.1] - 2026-10-09
 
