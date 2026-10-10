@@ -6,8 +6,7 @@
   "scripts": {
     "dev": "vite --host 127.0.0.1 --port 1420",
     "build": "tsc --noEmit && vite build",
-    "build:desktop": "pnpm prepare:codex-sidecar && pnpm build",
-    "prepare:codex-sidecar": "node scripts/prepare-codex-sidecar.mjs",
+    "build:desktop": "pnpm build",
     "tauri": "tauri",
     "tauri:dev": "tauri dev"
   },
@@ -18,7 +17,6 @@
     "react-dom": "^19.0.0"
   },
   "devDependencies": {
-    "@openai/codex": "0.155.1",
     "@tauri-apps/cli": "^2.5.0",
     "@types/react": "^19.0.0",
     "@types/react-dom": "^19.0.0",
