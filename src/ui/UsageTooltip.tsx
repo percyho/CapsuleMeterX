@@ -36,7 +36,7 @@ const TEXT = {
     statistics: "打开统计",
     settings: "设置",
     startupSettings: "偏好设置",
-    settingsDescription: "调整胶囊外观、用量刷新和提醒。",
+    settingsDescription: "调整胶囊外观、用量刷新、提醒和任务完成后的关机行为。",
     startWithWindows: "登录 Windows 时启动",
     startWithWindowsHint: "登录 Windows 后自动显示胶囊。",
     capsuleSection: "胶囊",
@@ -55,6 +55,12 @@ const TEXT = {
     usagePaceAlert: "消耗速度过快时提醒",
     usagePaceAlertHint: "达到所选消耗速度时发送系统通知。",
     usagePaceThreshold: "提醒速度",
+    powerSection: "电源",
+    autoShutdownOnCodexComplete: "Codex 任务完成后关机",
+    autoShutdownOnCodexCompleteHint: "本机已跟踪的 Codex 回合全部成功完成后，启动 60 秒关机倒计时；新任务会自动取消倒计时。启用后请重启 Codex，在 Hooks 管理界面审核并信任监听器（CLI 可运行 /hooks），再开始任务。",
+    cancelScheduledShutdown: "取消关机倒计时",
+    shutdownCancelled: "已取消 CapsuleMeterX 发起的关机倒计时。",
+    noShutdownPending: "目前没有 CapsuleMeterX 发起的关机倒计时。",
     paceThresholdFast: "偏快（≥1.15×）",
     paceThresholdVeryFast: "过快（≥1.5×）",
     notificationPermissionDenied: "未获得系统通知权限，提醒设置未启用。",
@@ -121,7 +127,7 @@ const TEXT = {
     statistics: "Open statistics",
     settings: "Settings",
     startupSettings: "Preferences",
-    settingsDescription: "Adjust the capsule, refresh interval, and alerts.",
+    settingsDescription: "Adjust the capsule, usage refresh, alerts, and shutdown behavior.",
     startWithWindows: "Start when I sign in to Windows",
     startWithWindowsHint: "Show the capsule after you sign in.",
     capsuleSection: "Capsule",
@@ -140,6 +146,12 @@ const TEXT = {
     usagePaceAlert: "Fast usage alert",
     usagePaceAlertHint: "Notify when the usage pace reaches the selected level.",
     usagePaceThreshold: "Alert pace",
+    powerSection: "Power",
+    autoShutdownOnCodexComplete: "Shut down after Codex tasks complete",
+    autoShutdownOnCodexCompleteHint: "Starts a 60-second shutdown countdown after all tracked local Codex turns complete successfully. A new task cancels the countdown. After enabling, restart Codex, review and trust the listener in Codex's Hooks manager (use /hooks in the CLI), then start a task.",
+    cancelScheduledShutdown: "Cancel shutdown countdown",
+    shutdownCancelled: "CapsuleMeterX shutdown countdown cancelled.",
+    noShutdownPending: "There is no CapsuleMeterX shutdown countdown to cancel.",
     paceThresholdFast: "Fast (≥1.15×)",
     paceThresholdVeryFast: "Very fast (≥1.5×)",
     notificationPermissionDenied: "Notification permission was not granted; the alert was not enabled.",
@@ -416,6 +428,7 @@ export function UsageTooltipWindow() {
   const [settingsLoading, setSettingsLoading] = useState(false);
   const [settingsSaving, setSettingsSaving] = useState(false);
   const [settingsError, setSettingsError] = useState("");
+  const [shutdownFeedback, setShutdownFeedback] = useState("");
   const [resetError, setResetError] = useState("");
   const [consumedCardIds, setConsumedCardIds] = useState<string[]>([]);
   const idempotencyKeys = useRef(new Map<string, string>());
@@ -631,6 +644,7 @@ export function UsageTooltipWindow() {
     setAppSettings(next);
     setSettingsSaving(true);
     setSettingsError("");
+    setShutdownFeedback("");
     try {
       const saved = await invoke<AppSettings>("set_startup_settings", { settings: next });
       setAppSettings(saved);
@@ -639,6 +653,16 @@ export function UsageTooltipWindow() {
       setSettingsError(`${text.settingsSaveError}${error instanceof Error ? error.message : String(error)}`);
     } finally {
       setSettingsSaving(false);
+    }
+  };
+
+  const cancelScheduledShutdown = async () => {
+    setShutdownFeedback("");
+    try {
+      const cancelled = await invoke<boolean>("cancel_auto_shutdown");
+      setShutdownFeedback(cancelled ? text.shutdownCancelled : text.noShutdownPending);
+    } catch (error) {
+      setShutdownFeedback(`${text.settingsSaveError}${error instanceof Error ? error.message : String(error)}`);
     }
   };
 
@@ -1146,6 +1170,36 @@ export function UsageTooltipWindow() {
                         <option value="very-fast">{text.paceThresholdVeryFast}</option>
                       </select>
                     </div>
+                  </section>
+                  <section className="settings-group">
+                    <h3>{text.powerSection}</h3>
+                    <label className="settings-option">
+                      <span className="settings-option__copy">
+                        <strong>{text.autoShutdownOnCodexComplete}</strong>
+                        <span>{text.autoShutdownOnCodexCompleteHint}</span>
+                      </span>
+                      <input
+                        type="checkbox"
+                        role="switch"
+                        checked={appSettings.autoShutdownOnCodexComplete}
+                        disabled={settingsSaving}
+                        onChange={(event) => void updateAppSetting("autoShutdownOnCodexComplete", event.currentTarget.checked)}
+                      />
+                    </label>
+                    <div className={`settings-control${appSettings.autoShutdownOnCodexComplete ? "" : " settings-control--disabled"}`}>
+                      <span className="settings-option__copy">
+                        <strong>{text.cancelScheduledShutdown}</strong>
+                      </span>
+                      <button
+                        className="shutdown-cancel-button"
+                        type="button"
+                        disabled={settingsSaving || !appSettings.autoShutdownOnCodexComplete}
+                        onClick={() => void cancelScheduledShutdown()}
+                      >
+                        {text.cancel}
+                      </button>
+                    </div>
+                    {shutdownFeedback && <p className="settings-dialog__status" role="status">{shutdownFeedback}</p>}
                   </section>
                 </div>
               )}

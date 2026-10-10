@@ -9,6 +9,7 @@ export interface AppSettings {
   lowBalanceThresholdPercent: number;
   usagePaceAlertEnabled: boolean;
   usagePaceAlertThreshold: UsagePaceAlertThreshold;
+  autoShutdownOnCodexComplete: boolean;
 }
 
 export const DEFAULT_APP_SETTINGS: AppSettings = {
@@ -20,4 +21,5 @@ export const DEFAULT_APP_SETTINGS: AppSettings = {
   lowBalanceThresholdPercent: 20,
   usagePaceAlertEnabled: false,
   usagePaceAlertThreshold: "very-fast",
+  autoShutdownOnCodexComplete: false,
 };

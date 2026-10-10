@@ -893,6 +893,30 @@ body {
   font-size: 11px;
 }
 
+.shutdown-cancel-button {
+  padding: 6px 9px;
+  border: 1px solid var(--control-border);
+  border-radius: 8px;
+  background: var(--panel-bg);
+  color: var(--text-primary);
+  font: inherit;
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.shutdown-cancel-button:hover:not(:disabled) {
+  background: var(--control-hover);
+}
+
+.shutdown-cancel-button:focus-visible {
+  outline: 2px solid var(--usage-accent);
+  outline-offset: 2px;
+}
+
+.shutdown-cancel-button:disabled {
+  cursor: not-allowed;
+}
+
 .settings-control select:focus-visible,
 .settings-range__input:focus-visible {
   outline: 2px solid var(--usage-accent);

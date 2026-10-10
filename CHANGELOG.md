@@ -2,6 +2,12 @@
 
 ## [Unreleased]
 
+## [0.2.2] - 2026-10-10
+
+### Added
+
+- Added an optional automatic shutdown monitor that waits for all tracked Codex tasks to complete successfully, with cancellation from the system tray.
+
 ## [0.2.1] - 2026-10-09
 
 ### Changed

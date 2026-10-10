@@ -31,6 +31,8 @@ const TOOLTIP_MIN_HEIGHT: f64 = 80.0;
 const POLL_INTERVAL: Duration = Duration::from_secs(120);
 const FAST_MODE_POLL_INTERVAL: Duration = Duration::from_secs(10);
 const SNAP_THRESHOLD: f64 = 24.0;
+const CODEX_TASK_MONITOR_OWNER: &str = "CapsuleMeterXCodexTaskMonitor";
+const CODEX_TASK_MONITOR_SCRIPT: &str = include_str!("../resources/codex-task-monitor.ps1");
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -104,6 +106,7 @@ struct StartupSettings {
     low_balance_threshold_percent: u8,
     usage_pace_alert_enabled: bool,
     usage_pace_alert_threshold: String,
+    auto_shutdown_on_codex_complete: bool,
 }
 
 impl Default for StartupSettings {
@@ -117,6 +120,7 @@ impl Default for StartupSettings {
             low_balance_threshold_percent: 20,
             usage_pace_alert_enabled: false,
             usage_pace_alert_threshold: "very-fast".into(),
+            auto_shutdown_on_codex_complete: false,
         }
     }
 }
@@ -303,16 +307,33 @@ fn set_startup_settings(
             .map_err(|error| error.to_string())?;
     }
 
-    save_startup_settings(&app, &settings)?;
+    if previous.auto_shutdown_on_codex_complete != settings.auto_shutdown_on_codex_complete {
+        configure_codex_task_monitor(&app, settings.auto_shutdown_on_codex_complete)?;
+    }
+
+    if let Err(error) = save_startup_settings(&app, &settings) {
+        if previous.auto_shutdown_on_codex_complete != settings.auto_shutdown_on_codex_complete {
+            let _ = configure_codex_task_monitor(&app, previous.auto_shutdown_on_codex_complete);
+        }
+        return Err(error);
+    }
     if let Ok(mut current) = state.startup_settings.lock() {
         *current = settings.clone();
     }
     if previous.refresh_interval_minutes != settings.refresh_interval_minutes {
         let _ = state.refresh_tx.send(());
     }
+    if !settings.auto_shutdown_on_codex_complete {
+        let _ = cancel_auto_shutdown_inner(&app);
+    }
     let _ = app.emit("app-settings-updated", settings.clone());
 
     Ok(settings)
+}
+
+#[tauri::command]
+fn cancel_auto_shutdown(app: AppHandle) -> Result<bool, String> {
+    cancel_auto_shutdown_inner(&app)
 }
 
 #[tauri::command]
@@ -403,6 +424,178 @@ fn save_startup_settings(app: &AppHandle, settings: &StartupSettings) -> Result<
     let path = startup_settings_file(app)?;
     let contents = serde_json::to_vec_pretty(settings).map_err(|error| error.to_string())?;
     fs::write(path, contents).map_err(|error| error.to_string())
+}
+
+fn codex_task_monitor_paths(
+    app: &AppHandle,
+) -> Result<(PathBuf, PathBuf, PathBuf, PathBuf), String> {
+    let directory = app
+        .path()
+        .app_data_dir()
+        .map_err(|error| error.to_string())?;
+    fs::create_dir_all(&directory).map_err(|error| error.to_string())?;
+    Ok((
+        directory.join("codex-task-monitor.ps1"),
+        directory.join("codex-task-monitor-state.json"),
+        directory.join("codex-shutdown-pending.json"),
+        directory.join("codex-task-monitor.enabled"),
+    ))
+}
+
+fn codex_hooks_file(app: &AppHandle) -> Result<PathBuf, String> {
+    let home = std::env::var_os("CODEX_HOME")
+        .map(PathBuf::from)
+        .filter(|path| !path.as_os_str().is_empty())
+        .or_else(|| std::env::var_os("USERPROFILE").map(|path| PathBuf::from(path).join(".codex")))
+        .or_else(|| app.path().home_dir().ok().map(|path| path.join(".codex")))
+        .ok_or_else(|| "Could not locate the Codex home directory".to_owned())?;
+    Ok(home.join("hooks.json"))
+}
+
+fn hook_entry_is_ours(entry: &Value) -> bool {
+    entry
+        .get("hooks")
+        .and_then(Value::as_array)
+        .is_some_and(|handlers| {
+            handlers.iter().any(|handler| {
+                handler
+                    .get("command")
+                    .or_else(|| handler.get("commandWindows"))
+                    .and_then(Value::as_str)
+                    .is_some_and(|command| command.contains(CODEX_TASK_MONITOR_OWNER))
+            })
+        })
+}
+
+fn quoted_hook_path(path: &std::path::Path) -> String {
+    format!("\"{}\"", path.to_string_lossy())
+}
+
+fn configure_codex_task_monitor(app: &AppHandle, enabled: bool) -> Result<(), String> {
+    #[cfg(not(windows))]
+    if enabled {
+        return Err("Codex task shutdown monitoring is available only on Windows".into());
+    }
+
+    let (script_path, state_path, pending_path, enabled_path) = codex_task_monitor_paths(app)?;
+    if enabled {
+        fs::write(&script_path, CODEX_TASK_MONITOR_SCRIPT).map_err(|error| error.to_string())?;
+    }
+
+    let hooks_path = codex_hooks_file(app)?;
+    if !enabled && !hooks_path.exists() {
+        let _ = fs::remove_file(&enabled_path);
+        return Ok(());
+    }
+    if enabled {
+        if let Some(parent) = hooks_path.parent() {
+            fs::create_dir_all(parent).map_err(|error| error.to_string())?;
+        }
+    }
+
+    let mut document = if hooks_path.exists() {
+        let contents = fs::read_to_string(&hooks_path).map_err(|error| error.to_string())?;
+        serde_json::from_str::<Value>(&contents)
+            .map_err(|error| format!("Could not read Codex hooks.json: {error}"))?
+    } else {
+        json!({})
+    };
+    let root = document
+        .as_object_mut()
+        .ok_or_else(|| "Codex hooks.json must contain a JSON object".to_owned())?;
+
+    if enabled {
+        let hooks = root.entry("hooks").or_insert_with(|| json!({}));
+        let events = hooks
+            .as_object_mut()
+            .ok_or_else(|| "The hooks value in Codex hooks.json must be an object".to_owned())?;
+        for (event, timeout) in [
+            ("UserPromptSubmit", 3),
+            ("Stop", 45),
+            ("Interrupt", 3),
+            ("SessionEnd", 3),
+        ] {
+            let command = format!(
+                "powershell.exe -WindowStyle Hidden -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -File {} -Event {} -StatePath {} -PendingPath {} -EnabledPath {} -Owner {}",
+                quoted_hook_path(&script_path),
+                event,
+                quoted_hook_path(&state_path),
+                quoted_hook_path(&pending_path),
+                quoted_hook_path(&enabled_path),
+                CODEX_TASK_MONITOR_OWNER,
+            );
+            let entries = events
+                .entry(event.to_owned())
+                .or_insert_with(|| json!([]))
+                .as_array_mut()
+                .ok_or_else(|| format!("Codex hook event {event} must contain an array"))?;
+            entries.retain(|entry| !hook_entry_is_ours(entry));
+            entries.push(json!({
+                "hooks": [{
+                    "type": "command",
+                    "command": command.clone(),
+                    "commandWindows": command,
+                    "async": true,
+                    "timeout": timeout,
+                    "statusMessage": "CapsuleMeterX 正在监听 Codex 任务"
+                }]
+            }));
+        }
+    } else {
+        let Some(events) = root.get_mut("hooks").and_then(Value::as_object_mut) else {
+            let _ = fs::remove_file(&enabled_path);
+            return Ok(());
+        };
+        let mut empty_events = Vec::new();
+        for (event, entries) in events.iter_mut() {
+            if let Some(entries) = entries.as_array_mut() {
+                entries.retain(|entry| !hook_entry_is_ours(entry));
+                if entries.is_empty() {
+                    empty_events.push(event.clone());
+                }
+            }
+        }
+        for event in empty_events {
+            events.remove(&event);
+        }
+    }
+
+    let contents = serde_json::to_vec_pretty(&document).map_err(|error| error.to_string())?;
+    let temporary_path = hooks_path.with_extension("json.tmp");
+    fs::write(&temporary_path, contents).map_err(|error| error.to_string())?;
+    fs::rename(&temporary_path, &hooks_path).map_err(|error| error.to_string())?;
+
+    if enabled {
+        fs::write(&enabled_path, b"enabled").map_err(|error| error.to_string())?;
+    } else {
+        let _ = fs::remove_file(&enabled_path);
+    }
+    Ok(())
+}
+
+fn cancel_auto_shutdown_inner(app: &AppHandle) -> Result<bool, String> {
+    let (_, _, pending_path, _) = codex_task_monitor_paths(app)?;
+    if !pending_path.exists() {
+        return Ok(false);
+    }
+
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        let status = Command::new("shutdown.exe")
+            .arg("/a")
+            .creation_flags(0x0800_0000)
+            .status()
+            .map_err(|error| error.to_string())?;
+        let _ = fs::remove_file(pending_path);
+        Ok(status.success())
+    }
+
+    #[cfg(not(windows))]
+    {
+        let _ = fs::remove_file(pending_path);
+        Ok(false)
+    }
 }
 
 fn load_statistics(app: &AppHandle) -> StatisticsData {
@@ -2130,7 +2323,9 @@ fn create_tray(app: &tauri::App) -> tauri::Result<()> {
         None::<&str>,
     )?;
     let statistics = MenuItem::with_id(app, "statistics", "使用统计", true, None::<&str>)?;
-    let menu = Menu::with_items(app, &[&refresh, &statistics, &quit])?;
+    let cancel_shutdown =
+        MenuItem::with_id(app, "cancel-shutdown", "取消定时关机", true, None::<&str>)?;
+    let menu = Menu::with_items(app, &[&refresh, &statistics, &cancel_shutdown, &quit])?;
 
     TrayIconBuilder::with_id(TRAY_ID)
         .icon(usage_icon(&UsageSnapshot::default()))
@@ -2143,6 +2338,9 @@ fn create_tray(app: &tauri::App) -> tauri::Result<()> {
                 }
             }
             "quit" => app.exit(0),
+            "cancel-shutdown" => {
+                let _ = cancel_auto_shutdown_inner(app);
+            }
             "statistics" => {
                 hide_tooltip_window(app);
                 if let Some(window) = app.get_webview_window(STATISTICS_LABEL) {
@@ -2232,6 +2430,7 @@ pub fn run() {
             save_statistics_csv,
             get_startup_settings,
             set_startup_settings,
+            cancel_auto_shutdown,
             consume_reset_card,
             show_usage_tooltip,
             show_tray_usage_details,
@@ -2244,6 +2443,11 @@ pub fn run() {
         .setup(move |app| {
             create_tray(app)?;
             let startup_settings = load_startup_settings(app.handle());
+            if startup_settings.auto_shutdown_on_codex_complete {
+                if let Err(error) = configure_codex_task_monitor(app.handle(), true) {
+                    eprintln!("Could not install Codex task monitor hooks: {error}");
+                }
+            }
             if let Some(state) = app.try_state::<AppState>() {
                 if let Ok(mut statistics) = state.statistics.lock() {
                     *statistics = load_statistics(app.handle());

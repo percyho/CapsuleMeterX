@@ -9,6 +9,7 @@ CapsuleMeterX is a Windows desktop usage utility built with React, TypeScript, R
 - **Floating capsule:** 32px tall with content-adaptive width (64–280px). Drag it to snap to a monitor work-area edge; its position is restored on the next launch.
 - **Usage metrics:** Shows remaining five-hour and weekly usage. The left and right halves of the capsule border reflect the consumption pace for those windows, respectively; they do not represent remaining quota.
 - **Fast mode:** A lightning icon reports whether fast mode is enabled when Codex App Server exposes that configuration.
+- **Shutdown after task completion:** Optionally watch local Codex turns and start a 60-second shutdown countdown after all tracked turns complete successfully. A new task or the tray menu cancels the countdown. This feature is off by default.
 - **Tray usage ring:** A 32×32 transparent icon with an empty center. Its ring represents five-hour remaining usage only; unknown or offline usage is shown in gray.
 - **Hover details:** Hover over the tray icon or capsule to open the full panel with five-hour and weekly reset times, reset-card count, and expiry details.
 - **Reset-card flow:** A confirmation is required before use. The app reports success and refreshes usage only after the server confirms the operation. Cards with missing data or identifiers cannot be used.
@@ -34,6 +35,8 @@ $env:CODEX_CLI_PATH = "C:\path\to\codex.exe"
 ```
 
 Make sure that this Codex CLI can access the account whose usage you want to view.
+
+When “Shut down after Codex tasks complete” is enabled, CapsuleMeterX merges its lifecycle hooks into the user-level `hooks.json`. Restart Codex, review and trust the listener in Codex’s Hooks manager (use `/hooks` in the CLI), then start the tasks you want to track. The listener checks each turn status; failed or interrupted turns do not trigger shutdown. A new task or the tray menu can cancel the 60-second countdown.
 
 ## Development prerequisites
 
