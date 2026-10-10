@@ -402,8 +402,12 @@ fn start_chatgpt_watcher(app: AppHandle) {
     thread::spawn(move || {
         let mut monitoring_enabled = false;
         let mut chatgpt_was_running = false;
+        let mut first_poll = true;
         loop {
-            thread::sleep(Duration::from_secs(2));
+            if !first_poll {
+                thread::sleep(Duration::from_secs(2));
+            }
+            first_poll = false;
             let Some(state) = app.try_state::<AppState>() else {
                 continue;
             };
@@ -2287,13 +2291,13 @@ pub fn run() {
             let autostart = app.autolaunch();
             let should_launch_at_login =
                 startup_settings.start_with_windows || startup_settings.start_with_chatgpt;
-            if autostart.is_enabled().unwrap_or(false) != should_launch_at_login {
-                let result = if should_launch_at_login {
-                    autostart.enable()
-                } else {
-                    autostart.disable()
-                };
-                if let Err(error) = result {
+            if should_launch_at_login {
+                // Refresh the command line so older registrations gain the background flag.
+                if let Err(error) = autostart.enable() {
+                    eprintln!("Could not sync startup registration: {error}");
+                }
+            } else if autostart.is_enabled().unwrap_or(false) {
+                if let Err(error) = autostart.disable() {
                     eprintln!("Could not sync startup registration: {error}");
                 }
             }
