@@ -10,8 +10,11 @@ import {
   resetCardExpiryCountdown,
   resetClockLabel,
   usageColor,
+  usagePaceColor,
+  usagePaceState,
   weeklyResetLabel,
 } from "../utils/usage";
+import type { UsagePaceState } from "../utils/usage";
 
 type ResetDialogState = "confirm" | "loading" | "success" | "error";
 type Language = "zh" | "en";
@@ -29,6 +32,10 @@ const TEXT = {
     offline: "无法连接 Codex App Server",
     fiveHour: "5 小时剩余",
     weekly: "本周剩余",
+    paceNormal: "消耗速度正常",
+    paceFast: "消耗速度偏快",
+    paceVeryFast: "消耗速度过快",
+    paceUnknown: "消耗速度未知",
     nextReset: "下次重置",
     resetCards: "剩余重置卡",
     cardCountUnit: "张",
@@ -83,6 +90,10 @@ const TEXT = {
     offline: "Unable to connect to Codex App Server",
     fiveHour: "5-hour remaining",
     weekly: "Weekly remaining",
+    paceNormal: "Usage pace: normal",
+    paceFast: "Usage pace: fast",
+    paceVeryFast: "Usage pace: very fast",
+    paceUnknown: "Usage pace unknown",
     nextReset: "Next reset",
     resetCards: "Available reset cards",
     cardCountUnit: "cards",
@@ -146,6 +157,16 @@ function localizeResetError(error: string, language: Language): string {
     [TEXT.zh.serverDisconnected]: TEXT.en.serverDisconnected,
   };
   return knownErrors[error] ?? error;
+}
+
+function usagePaceLabel(state: UsagePaceState, language: Language): string {
+  const text = TEXT[language];
+  switch (state) {
+    case "normal": return text.paceNormal;
+    case "fast": return text.paceFast;
+    case "very-fast": return text.paceVeryFast;
+    default: return text.paceUnknown;
+  }
 }
 
 function UsageRing({ window, label }: { window: UsageWindow | null; label: string }) {
@@ -330,6 +351,8 @@ export function UsageTooltipWindow() {
   const themeLeaveCheckTimer = useRef<number | undefined>(undefined);
   const themeGuardReleaseTimer = useRef<number | undefined>(undefined);
   const text = TEXT[language];
+  const fiveHourPaceWindow = usage.status === "online" ? usage.fiveHour : null;
+  const weeklyPaceWindow = usage.status === "online" ? usage.weekly : null;
 
   useLayoutEffect(() => {
     document.documentElement.dataset.theme = theme;
@@ -627,6 +650,9 @@ export function UsageTooltipWindow() {
                 <UsageRing window={usage.fiveHour} label={text.fiveHour} />
                 <div className="usage-window__summary">
                   <strong>{text.fiveHour}</strong>
+                  <span style={{ color: usagePaceColor(fiveHourPaceWindow, now) }}>
+                    {usagePaceLabel(usagePaceState(fiveHourPaceWindow, now), language)}
+                  </span>
                   <span>{text.nextReset}</span>
                 </div>
                 <span className="usage-window__time">
@@ -637,6 +663,9 @@ export function UsageTooltipWindow() {
                 <UsageRing window={usage.weekly} label={text.weekly} />
                 <div className="usage-window__summary">
                   <strong>{text.weekly}</strong>
+                  <span style={{ color: usagePaceColor(weeklyPaceWindow, now) }}>
+                    {usagePaceLabel(usagePaceState(weeklyPaceWindow, now), language)}
+                  </span>
                   <span>{text.nextReset}</span>
                 </div>
                 <span className="usage-window__time">
