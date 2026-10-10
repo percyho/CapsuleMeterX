@@ -350,6 +350,7 @@ export function UsageTooltipWindow() {
   const themeTransitioning = useRef(false);
   const themeLeaveCheckTimer = useRef<number | undefined>(undefined);
   const themeGuardReleaseTimer = useRef<number | undefined>(undefined);
+  const themeFallbackTimer = useRef<number | undefined>(undefined);
   const text = TEXT[language];
   const fiveHourPaceWindow = usage.status === "online" ? usage.fiveHour : null;
   const weeklyPaceWindow = usage.status === "online" ? usage.weekly : null;
@@ -425,6 +426,8 @@ export function UsageTooltipWindow() {
   useEffect(() => () => {
     window.clearTimeout(themeLeaveCheckTimer.current);
     window.clearTimeout(themeGuardReleaseTimer.current);
+    window.clearTimeout(themeFallbackTimer.current);
+    delete document.documentElement.dataset.themeTransitionFallback;
   }, []);
 
   useEffect(() => {
@@ -445,6 +448,10 @@ export function UsageTooltipWindow() {
   const toggleTheme = () => {
     const nextTheme: Theme = theme === "dark" ? "light" : "dark";
     const applyTheme = () => flushSync(() => setTheme(nextTheme));
+    const root = document.documentElement;
+    const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    window.clearTimeout(themeFallbackTimer.current);
+    delete root.dataset.themeTransitionFallback;
     for (const animation of document.getAnimations()) {
       const effect = animation.effect;
       if (
@@ -455,7 +462,7 @@ export function UsageTooltipWindow() {
         animation.cancel();
       }
     }
-    document.documentElement.dataset.themeTransitionTarget = nextTheme;
+    root.dataset.themeTransitionTarget = nextTheme;
     const protectTooltip = () => {
       themeTransitioning.current = true;
       window.clearTimeout(themeGuardReleaseTimer.current);
@@ -475,7 +482,7 @@ export function UsageTooltipWindow() {
     window.clearTimeout(themeGuardReleaseTimer.current);
 
     if (
-      !window.matchMedia("(prefers-reduced-motion: reduce)").matches &&
+      !reducedMotion &&
       typeof document.startViewTransition === "function"
     ) {
       try {
@@ -487,9 +494,18 @@ export function UsageTooltipWindow() {
       }
     }
     applyTheme();
-    themeGuardReleaseTimer.current = window.setTimeout(() => {
-      themeTransitioning.current = false;
-    }, 180);
+    if (reducedMotion) {
+      themeGuardReleaseTimer.current = window.setTimeout(() => {
+        themeTransitioning.current = false;
+      }, 180);
+      return;
+    }
+
+    root.dataset.themeTransitionFallback = nextTheme;
+    themeFallbackTimer.current = window.setTimeout(() => {
+      delete root.dataset.themeTransitionFallback;
+      protectTooltip();
+    }, 500);
   };
 
   const openResetDialog = (card: ResetCardExpiry) => {
